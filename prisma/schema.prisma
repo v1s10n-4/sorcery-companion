@@ -1,0 +1,147 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Card {
+  id         String   @id @default(cuid())
+  name       String
+  type       String   // Minion, Spell, Site, etc.
+  rarity     String?  // Ordinary, Exceptional, Elite, Unique
+  rulesText  String?
+  cost       Int?
+  attack     Int?
+  defence    Int?
+  life       Int?
+  elements   String?  // Air, Earth, Fire, Water, or combinations
+  subTypes   String?  // Mortal, Beast, etc.
+
+  // Element thresholds
+  thresholdAir   Int @default(0)
+  thresholdEarth Int @default(0)
+  thresholdFire  Int @default(0)
+  thresholdWater Int @default(0)
+
+  sets     CardSet[]
+  variants CardVariant[]
+
+  collectionCards CollectionCard[]
+  deckCards       DeckCard[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([name])
+}
+
+model CardSet {
+  id         String   @id @default(cuid())
+  name       String   // Alpha, Beta, etc.
+  releasedAt DateTime?
+
+  // Set-specific metadata (can differ from card defaults)
+  rarity     String?
+  type       String?
+  rulesText  String?
+  cost       Int?
+  attack     Int?
+  defence    Int?
+  life       Int?
+  thresholdAir   Int?
+  thresholdEarth Int?
+  thresholdFire  Int?
+  thresholdWater Int?
+
+  card     Card     @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  cardId   String
+  variants CardVariant[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([cardId, name])
+}
+
+model CardVariant {
+  id        String  @id @default(cuid())
+  slug      String  @unique // e.g. "alp-apprentice_wizard-b-s"
+  finish    String  // Standard, Foil
+  product   String  // Booster, Precon, etc.
+  artist    String?
+  flavorText String?
+  typeText  String?
+  imageUrl  String? // We'll host images ourselves
+
+  card     Card    @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  cardId   String
+  set      CardSet @relation(fields: [setId], references: [id], onDelete: Cascade)
+  setId    String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Phase 2: Collections & Users
+model User {
+  id          String       @id @default(cuid())
+  email       String       @unique
+  name        String?
+  collections Collection[]
+  decks       Deck[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+model Collection {
+  id     String           @id @default(cuid())
+  name   String
+  user   User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+  cards  CollectionCard[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model CollectionCard {
+  id           String     @id @default(cuid())
+  quantity     Int        @default(1)
+  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  collectionId String
+  card         Card       @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  cardId       String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([collectionId, cardId])
+}
+
+model Deck {
+  id     String     @id @default(cuid())
+  name   String
+  user   User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+  cards  DeckCard[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model DeckCard {
+  id       String @id @default(cuid())
+  quantity Int    @default(1)
+  owned    Boolean @default(false)
+  deck     Deck   @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  deckId   String
+  card     Card   @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  cardId   String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([deckId, cardId])
+}
