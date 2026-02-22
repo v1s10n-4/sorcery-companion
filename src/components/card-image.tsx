@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { useState } from "react";
 
-const CARD_IMAGE_BASE = "https://d27a44hjr9gen3.cloudfront.net";
+const CARD_IMAGE_BASE = "https://pub-fbad7d695b084411b42bdff03adbffd5.r2.dev";
 
 interface CardImageProps {
   slug: string;
