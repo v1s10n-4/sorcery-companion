@@ -38,37 +38,48 @@ const ELEMENT_COLORS: Record<string, string> = {
 };
 
 export function CardGrid({ cards }: { cards: CardData[] }) {
+  if (cards.length === 0) {
+    return (
+      <div className="text-center py-16 text-muted-foreground">
+        <p className="text-lg">No cards found</p>
+        <p className="text-sm mt-1">Try adjusting your search or filters</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
       {cards.map((card) => (
         <Link key={card.id} href={`/cards/${card.id}`}>
-          <Card className="hover:shadow-lg transition-shadow cursor-pointer h-full">
+          <Card className="hover:shadow-lg hover:scale-[1.02] transition-all cursor-pointer h-full overflow-hidden group">
             {card.variants[0] && (
-              <div className="px-4 pt-4">
+              <div className="p-2 pb-0">
                 <CardImage
                   slug={card.variants[0].slug}
                   name={card.name}
                   width={260}
                   height={364}
-                  className="w-full h-auto"
+                  className="w-full h-auto rounded-md"
                 />
               </div>
             )}
-            <CardHeader className="pb-2">
-              <div className="flex justify-between items-start">
-                <CardTitle className="text-base">{card.name}</CardTitle>
+            <CardHeader className="p-2 pb-1">
+              <div className="flex justify-between items-start gap-1">
+                <CardTitle className="text-sm leading-tight line-clamp-1">
+                  {card.name}
+                </CardTitle>
                 {card.cost !== null && (
-                  <span className="text-sm font-bold bg-muted rounded-full w-7 h-7 flex items-center justify-center shrink-0">
+                  <span className="text-xs font-bold bg-muted rounded-full w-5 h-5 flex items-center justify-center shrink-0">
                     {card.cost}
                   </span>
                 )}
               </div>
               <CardDescription className="flex gap-1 flex-wrap">
-                <Badge variant="secondary" className="text-xs">
+                <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
                   {card.type}
                 </Badge>
                 {card.rarity && (
-                  <Badge variant="outline" className="text-xs">
+                  <Badge variant="outline" className="text-[10px] px-1.5 py-0">
                     {card.rarity}
                   </Badge>
                 )}
@@ -77,18 +88,18 @@ export function CardGrid({ cards }: { cards: CardData[] }) {
                   card.elements.split(",").map((el) => (
                     <Badge
                       key={el.trim()}
-                      className={`text-xs ${ELEMENT_COLORS[el.trim()] || ""}`}
+                      className={`text-[10px] px-1.5 py-0 ${ELEMENT_COLORS[el.trim()] || ""}`}
                     >
                       {el.trim()}
                     </Badge>
                   ))}
               </CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="flex gap-3 text-xs">
-                {card.attack !== null && <span>⚔️ {card.attack}</span>}
-                {card.defence !== null && <span>🛡️ {card.defence}</span>}
-                {card.life !== null && <span>❤️ {card.life}</span>}
+            <CardContent className="p-2 pt-0">
+              <div className="flex gap-2 text-[10px] text-muted-foreground">
+                {card.attack !== null && <span>⚔️{card.attack}</span>}
+                {card.defence !== null && <span>🛡️{card.defence}</span>}
+                {card.life !== null && <span>❤️{card.life}</span>}
               </div>
             </CardContent>
           </Card>

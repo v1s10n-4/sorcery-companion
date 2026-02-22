@@ -23,7 +23,7 @@ export function FilterBar({
 }: FilterBarProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [, startTransition] = useTransition();
+  const [isPending, startTransition] = useTransition();
 
   const toggleFilter = useCallback(
     (key: string, value: string) => {
@@ -33,6 +33,7 @@ export function FilterBar({
       } else {
         params.set(key, value);
       }
+      params.delete("page"); // Reset to page 1 on filter change
       startTransition(() => {
         router.push(`/?${params.toString()}`);
       });
@@ -40,15 +41,32 @@ export function FilterBar({
     [router, searchParams]
   );
 
+  const clearAll = useCallback(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("type");
+    params.delete("element");
+    params.delete("rarity");
+    params.delete("page");
+    startTransition(() => {
+      router.push(`/?${params.toString()}`);
+    });
+  }, [router, searchParams]);
+
+  const hasFilters = currentType || currentElement || currentRarity;
+
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap gap-2">
-        <span className="text-sm font-medium text-muted-foreground mr-1">Type:</span>
+    <div
+      className={`flex flex-col gap-3 ${isPending ? "opacity-60 pointer-events-none" : ""}`}
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm font-medium text-muted-foreground shrink-0">
+          Type:
+        </span>
         {types.map((type) => (
           <Badge
             key={type}
             variant={currentType === type ? "default" : "outline"}
-            className="cursor-pointer"
+            className="cursor-pointer hover:bg-accent/80 transition-colors"
             onClick={() => toggleFilter("type", type)}
           >
             {type}
@@ -56,13 +74,15 @@ export function FilterBar({
         ))}
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        <span className="text-sm font-medium text-muted-foreground mr-1">Element:</span>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm font-medium text-muted-foreground shrink-0">
+          Element:
+        </span>
         {elements.map((element) => (
           <Badge
             key={element}
             variant={currentElement === element ? "default" : "outline"}
-            className="cursor-pointer"
+            className="cursor-pointer hover:bg-accent/80 transition-colors"
             onClick={() => toggleFilter("element", element)}
           >
             {element}
@@ -70,19 +90,30 @@ export function FilterBar({
         ))}
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        <span className="text-sm font-medium text-muted-foreground mr-1">Rarity:</span>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm font-medium text-muted-foreground shrink-0">
+          Rarity:
+        </span>
         {rarities.map((rarity) => (
           <Badge
             key={rarity}
             variant={currentRarity === rarity ? "default" : "outline"}
-            className="cursor-pointer"
+            className="cursor-pointer hover:bg-accent/80 transition-colors"
             onClick={() => toggleFilter("rarity", rarity)}
           >
             {rarity}
           </Badge>
         ))}
       </div>
+
+      {hasFilters && (
+        <button
+          onClick={clearAll}
+          className="text-xs text-muted-foreground hover:text-foreground underline self-start transition-colors"
+        >
+          Clear all filters
+        </button>
+      )}
     </div>
   );
 }

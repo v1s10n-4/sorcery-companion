@@ -4,7 +4,7 @@ import { SearchBar } from "@/components/search-bar";
 import { FilterBar } from "@/components/filter-bar";
 import { Pagination } from "@/components/pagination";
 
-const PAGE_SIZE = 24;
+const PAGE_SIZE = 36;
 
 interface PageProps {
   searchParams: Promise<{

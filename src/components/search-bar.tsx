@@ -2,14 +2,17 @@
 
 import { Input } from "@/components/ui/input";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useTransition } from "react";
+import { useCallback, useEffect, useState, useTransition } from "react";
+import { useDebounce } from "@/hooks/use-debounce";
 
 export function SearchBar({ defaultValue }: { defaultValue?: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [, startTransition] = useTransition();
+  const [query, setQuery] = useState(defaultValue || "");
+  const debouncedQuery = useDebounce(query, 300);
 
-  const handleSearch = useCallback(
+  const navigate = useCallback(
     (value: string) => {
       const params = new URLSearchParams(searchParams.toString());
       if (value) {
@@ -17,6 +20,7 @@ export function SearchBar({ defaultValue }: { defaultValue?: string }) {
       } else {
         params.delete("q");
       }
+      params.delete("page"); // Reset to page 1 on search
       startTransition(() => {
         router.push(`/?${params.toString()}`);
       });
@@ -24,12 +28,16 @@ export function SearchBar({ defaultValue }: { defaultValue?: string }) {
     [router, searchParams]
   );
 
+  useEffect(() => {
+    navigate(debouncedQuery);
+  }, [debouncedQuery, navigate]);
+
   return (
     <Input
       type="search"
-      placeholder="Search cards..."
-      defaultValue={defaultValue}
-      onChange={(e) => handleSearch(e.target.value)}
+      placeholder="Search cards by name..."
+      value={query}
+      onChange={(e) => setQuery(e.target.value)}
       className="max-w-md"
     />
   );
