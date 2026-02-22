@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import { useState } from "react";
 
 const CARD_IMAGE_BASE = "https://d27a44hjr9gen3.cloudfront.net";
@@ -26,7 +25,7 @@ export function CardImage({
     return (
       <div
         className={`bg-muted rounded-lg flex items-center justify-center text-muted-foreground text-sm ${className}`}
-        style={{ width, height }}
+        style={{ width: "100%", aspectRatio: `${width}/${height}` }}
       >
         {name}
       </div>
@@ -34,14 +33,15 @@ export function CardImage({
   }
 
   return (
-    <Image
-      src={`${CARD_IMAGE_BASE}/images/cards/${slug}.png`}
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={`${CARD_IMAGE_BASE}/cards/${slug}.png`}
       alt={name}
       width={width}
       height={height}
       className={`rounded-lg shadow-lg ${className}`}
       onError={() => setError(true)}
-      unoptimized
+      loading="lazy"
     />
   );
 }
