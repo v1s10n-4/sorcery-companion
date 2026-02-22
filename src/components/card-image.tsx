@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useState } from "react";
 
 const CARD_IMAGE_BASE = "https://d27a44hjr9gen3.cloudfront.net";
@@ -20,6 +21,7 @@ export function CardImage({
   height = 420,
 }: CardImageProps) {
   const [error, setError] = useState(false);
+  const src = `${CARD_IMAGE_BASE}/cards/${slug}.png`;
 
   if (error) {
     return (
@@ -33,15 +35,13 @@ export function CardImage({
   }
 
   return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={`${CARD_IMAGE_BASE}/cards/${slug}.png`}
+    <Image
+      src={src}
       alt={name}
       width={width}
       height={height}
       className={`rounded-lg shadow-lg ${className}`}
       onError={() => setError(true)}
-      loading="lazy"
     />
   );
 }
