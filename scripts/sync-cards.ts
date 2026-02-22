@@ -11,7 +11,41 @@ import pg from "pg";
 const pool = new pg.Pool({ connectionString: process.env.DIRECT_URL });
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
+
 const API_URL = "https://api.sorcerytcg.com/api/cards";
+
+// Known keywords to extract from rules text
+const KEYWORDS = [
+  "Airborne", "Amphibious", "Burrow", "Deathtouch", "Defender",
+  "Genesis", "Guardian", "Lethal", "Ranged", "Stealth", "Submerge",
+  "Spellcaster", "Disable", "Immobile", "Indestructible", "Legendary",
+  "Projectile", "Voidwalk", "Ward", "Wither",
+];
+
+function extractKeywords(rulesText: string | null): string[] {
+  if (!rulesText) return [];
+  const found: string[] = [];
+  for (const kw of KEYWORDS) {
+    if (rulesText.includes(kw)) {
+      found.push(kw);
+    }
+  }
+  return found;
+}
+
+function slugifySetName(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
+function parseElements(elements: string | null): string[] {
+  if (!elements || elements === "None") return [];
+  return elements.split(",").map((e) => e.trim()).filter(Boolean);
+}
+
+function parseSubTypes(subTypes: string | null): string[] {
+  if (!subTypes) return [];
+  return subTypes.split(",").map((s) => s.trim()).filter(Boolean);
+}
 
 interface ApiThresholds {
   air: number;
@@ -21,7 +55,7 @@ interface ApiThresholds {
 }
 
 interface ApiMetadata {
-  rarity: string;
+  rarity: string | null;
   type: string;
   rulesText: string | null;
   cost: number | null;
@@ -58,20 +92,52 @@ interface ApiCard {
 async function syncCards() {
   console.log("Fetching cards from API...");
   const response = await fetch(API_URL);
-  if (!response.ok) {
-    throw new Error(`API returned ${response.status}`);
-  }
+  if (!response.ok) throw new Error(`API returned ${response.status}`);
 
   const cards: ApiCard[] = await response.json();
   console.log(`Fetched ${cards.length} cards`);
 
-  let created = 0;
-  let updated = 0;
+  // Step 1: Create/update all Sets
+  const setMap = new Map<string, string>(); // name → id
+  const setsFromApi = new Map<string, { name: string; releasedAt: string | null }>();
+
+  for (const apiCard of cards) {
+    for (const apiSet of apiCard.sets) {
+      if (!setsFromApi.has(apiSet.name)) {
+        setsFromApi.set(apiSet.name, {
+          name: apiSet.name,
+          releasedAt: apiSet.releasedAt,
+        });
+      }
+    }
+  }
+
+  for (const [name, data] of setsFromApi) {
+    const set = await prisma.set.upsert({
+      where: { name },
+      update: {
+        releasedAt: data.releasedAt ? new Date(data.releasedAt) : null,
+      },
+      create: {
+        name,
+        slug: slugifySetName(name),
+        releasedAt: data.releasedAt ? new Date(data.releasedAt) : null,
+      },
+    });
+    setMap.set(name, set.id);
+  }
+
+  console.log(`Synced ${setMap.size} sets`);
+
+  // Step 2: Create/update cards, card-sets, and variants
+  let cardCount = 0;
 
   for (const apiCard of cards) {
     const guardian = apiCard.guardian;
+    const elements = parseElements(apiCard.elements);
+    const subTypes = parseSubTypes(apiCard.subTypes);
+    const keywords = extractKeywords(guardian.rulesText);
 
-    // Upsert the card
     const card = await prisma.card.upsert({
       where: { name: apiCard.name },
       update: {
@@ -82,8 +148,9 @@ async function syncCards() {
         attack: guardian.attack,
         defence: guardian.defence,
         life: guardian.life,
-        elements: apiCard.elements,
-        subTypes: apiCard.subTypes,
+        elements,
+        subTypes,
+        keywords,
         thresholdAir: guardian.thresholds.air,
         thresholdEarth: guardian.thresholds.earth,
         thresholdFire: guardian.thresholds.fire,
@@ -98,8 +165,9 @@ async function syncCards() {
         attack: guardian.attack,
         defence: guardian.defence,
         life: guardian.life,
-        elements: apiCard.elements,
-        subTypes: apiCard.subTypes,
+        elements,
+        subTypes,
+        keywords,
         thresholdAir: guardian.thresholds.air,
         thresholdEarth: guardian.thresholds.earth,
         thresholdFire: guardian.thresholds.fire,
@@ -107,14 +175,14 @@ async function syncCards() {
       },
     });
 
-    // Upsert sets and variants
     for (const apiSet of apiCard.sets) {
-      const set = await prisma.cardSet.upsert({
+      const setId = setMap.get(apiSet.name)!;
+
+      const cardSet = await prisma.cardSet.upsert({
         where: {
-          cardId_name: { cardId: card.id, name: apiSet.name },
+          cardId_setId: { cardId: card.id, setId },
         },
         update: {
-          releasedAt: apiSet.releasedAt ? new Date(apiSet.releasedAt) : null,
           rarity: apiSet.metadata.rarity,
           type: apiSet.metadata.type,
           rulesText: apiSet.metadata.rulesText,
@@ -128,9 +196,8 @@ async function syncCards() {
           thresholdWater: apiSet.metadata.thresholds.water,
         },
         create: {
-          name: apiSet.name,
           cardId: card.id,
-          releasedAt: apiSet.releasedAt ? new Date(apiSet.releasedAt) : null,
+          setId,
           rarity: apiSet.metadata.rarity,
           type: apiSet.metadata.type,
           rulesText: apiSet.metadata.rulesText,
@@ -163,18 +230,28 @@ async function syncCards() {
             flavorText: apiVariant.flavorText,
             typeText: apiVariant.typeText,
             cardId: card.id,
-            setId: set.id,
+            setId: cardSet.id,
           },
         });
       }
     }
 
-    created++;
+    cardCount++;
   }
 
-  console.log(`Sync complete: ${created} cards processed`);
+  // Step 3: Update set card counts
+  for (const [name, setId] of setMap) {
+    const count = await prisma.cardSet.count({ where: { setId } });
+    await prisma.set.update({ where: { id: setId }, data: { cardCount: count } });
+    console.log(`  ${name}: ${count} cards`);
+  }
+
+  console.log(`\nSync complete: ${cardCount} cards processed`);
 }
 
 syncCards()
   .catch(console.error)
-  .finally(() => prisma.$disconnect());
+  .finally(async () => {
+    await prisma.$disconnect();
+    await pool.end();
+  });

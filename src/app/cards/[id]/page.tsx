@@ -4,16 +4,17 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import Link from "next/link";
 import { CardImage } from "@/components/card-image";
+import { ElementBadges, StatIcon, Thresholds } from "@/components/icons";
 
 interface PageProps {
   params: Promise<{ id: string }>;
 }
 
-const ELEMENT_COLORS: Record<string, string> = {
-  Air: "bg-sky-100 text-sky-800 dark:bg-sky-900 dark:text-sky-200",
-  Earth: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
-  Fire: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
-  Water: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
+const RARITY_COLORS: Record<string, string> = {
+  Ordinary: "border-zinc-500 text-zinc-400",
+  Exceptional: "border-sky-500 text-sky-400",
+  Elite: "border-purple-500 text-purple-400",
+  Unique: "border-amber-500 text-amber-400",
 };
 
 export default async function CardDetailPage({ params }: PageProps) {
@@ -24,9 +25,10 @@ export default async function CardDetailPage({ params }: PageProps) {
     include: {
       sets: {
         include: {
+          set: true,
           variants: true,
         },
-        orderBy: { releasedAt: "asc" },
+        orderBy: { set: { releasedAt: "asc" } },
       },
       variants: {
         orderBy: { createdAt: "asc" },
@@ -35,8 +37,6 @@ export default async function CardDetailPage({ params }: PageProps) {
   });
 
   if (!card) notFound();
-
-  const primaryVariant = card.variants[0];
 
   return (
     <main className="container mx-auto px-4 py-8 max-w-4xl">
@@ -48,101 +48,165 @@ export default async function CardDetailPage({ params }: PageProps) {
       </Link>
 
       <div className="grid grid-cols-1 md:grid-cols-[300px_1fr] gap-8">
-        {/* Card Image */}
-        <div>
-          {primaryVariant && (
-            <CardImage slug={primaryVariant.slug} name={card.name} />
+        {/* Card Image — show first variant, allow browsing */}
+        <div className="space-y-3">
+          {card.variants[0] && (
+            <CardImage
+              slug={card.variants[0].slug}
+              name={card.name}
+              width={300}
+              height={420}
+            />
+          )}
+
+          {/* Variant thumbnails */}
+          {card.variants.length > 1 && (
+            <div className="grid grid-cols-4 gap-2">
+              {card.variants.slice(0, 8).map((v) => (
+                <CardImage
+                  key={v.id}
+                  slug={v.slug}
+                  name={card.name}
+                  width={70}
+                  height={98}
+                  className="rounded-sm opacity-70 hover:opacity-100 transition-opacity cursor-pointer"
+                />
+              ))}
+            </div>
           )}
         </div>
 
         {/* Card Details */}
         <div>
-          <h1 className="text-3xl font-bold tracking-tight mb-2">{card.name}</h1>
+          <h1 className="text-3xl font-bold tracking-tight font-serif text-amber-100 mb-2">
+            {card.name}
+          </h1>
 
           <div className="flex flex-wrap gap-2 mb-4">
             <Badge variant="secondary">{card.type}</Badge>
-            {card.rarity && <Badge variant="outline">{card.rarity}</Badge>}
-            {card.subTypes && <Badge variant="outline">{card.subTypes}</Badge>}
-            {card.elements &&
-              card.elements !== "None" &&
-              card.elements.split(",").map((el) => (
-                <Badge
-                  key={el.trim()}
-                  className={ELEMENT_COLORS[el.trim()] || ""}
-                >
-                  {el.trim()}
-                </Badge>
-              ))}
+            {card.rarity && (
+              <Badge variant="outline" className={RARITY_COLORS[card.rarity] || ""}>
+                {card.rarity}
+              </Badge>
+            )}
+            {card.subTypes.map((st) => (
+              <Badge key={st} variant="outline">
+                {st}
+              </Badge>
+            ))}
           </div>
 
+          {/* Elements */}
+          {card.elements.length > 0 && (
+            <div className="mb-4">
+              <ElementBadges elements={card.elements} size="md" />
+            </div>
+          )}
+
           {/* Stats */}
-          <div className="grid grid-cols-2 gap-4 mb-6">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
             {card.cost !== null && (
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">Cost:</span>
-                <span className="font-bold">{card.cost}</span>
+              <div className="flex items-center gap-2 bg-card rounded-lg p-3 border border-border/50">
+                <span className="text-xs text-muted-foreground uppercase">Cost</span>
+                <span className="font-bold text-amber-200 ml-auto text-lg">{card.cost}</span>
               </div>
             )}
             {card.attack !== null && (
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">Attack:</span>
-                <span className="font-bold">⚔️ {card.attack}</span>
+              <div className="flex items-center gap-2 bg-card rounded-lg p-3 border border-border/50">
+                <StatIcon stat="attack" size="md" />
+                <span className="font-bold ml-auto text-lg">{card.attack}</span>
               </div>
             )}
             {card.defence !== null && (
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">Defence:</span>
-                <span className="font-bold">🛡️ {card.defence}</span>
+              <div className="flex items-center gap-2 bg-card rounded-lg p-3 border border-border/50">
+                <StatIcon stat="defence" size="md" />
+                <span className="font-bold ml-auto text-lg">{card.defence}</span>
               </div>
             )}
             {card.life !== null && (
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">Life:</span>
-                <span className="font-bold">❤️ {card.life}</span>
+              <div className="flex items-center gap-2 bg-card rounded-lg p-3 border border-border/50">
+                <span className="text-xs text-muted-foreground uppercase">Life</span>
+                <span className="font-bold text-red-400 ml-auto text-lg">{card.life}</span>
               </div>
             )}
           </div>
 
           {/* Thresholds */}
-          {(card.thresholdAir > 0 ||
-            card.thresholdEarth > 0 ||
-            card.thresholdFire > 0 ||
-            card.thresholdWater > 0) && (
-            <div className="flex gap-4 mb-6">
-              <span className="text-sm text-muted-foreground">Thresholds:</span>
-              {card.thresholdAir > 0 && <span>🌬️ {card.thresholdAir}</span>}
-              {card.thresholdEarth > 0 && <span>🌿 {card.thresholdEarth}</span>}
-              {card.thresholdFire > 0 && <span>🔥 {card.thresholdFire}</span>}
-              {card.thresholdWater > 0 && <span>💧 {card.thresholdWater}</span>}
+          <div className="mb-6">
+            <Thresholds
+              air={card.thresholdAir}
+              earth={card.thresholdEarth}
+              fire={card.thresholdFire}
+              water={card.thresholdWater}
+              size="md"
+            />
+          </div>
+
+          {/* Keywords */}
+          {card.keywords.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-4">
+              {card.keywords.map((kw) => (
+                <Badge
+                  key={kw}
+                  variant="outline"
+                  className="border-amber-700/50 text-amber-300 text-xs"
+                >
+                  {kw}
+                </Badge>
+              ))}
             </div>
           )}
 
           {/* Rules Text */}
           {card.rulesText && (
-            <div className="mb-6">
-              <h2 className="text-sm font-medium text-muted-foreground mb-2">Rules</h2>
-              <p className="whitespace-pre-line">{card.rulesText}</p>
+            <div className="mb-6 bg-card rounded-lg p-4 border border-border/50">
+              <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">
+                Rules
+              </h2>
+              <p className="whitespace-pre-line text-sm leading-relaxed">
+                {card.rulesText}
+              </p>
             </div>
           )}
 
-          {/* Sets & Variants */}
+          {/* Printings */}
           <div>
-            <h2 className="text-sm font-medium text-muted-foreground mb-3">Printings</h2>
+            <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+              Printings
+            </h2>
             <div className="flex flex-col gap-3">
-              {card.sets.map((set) => (
-                <Card key={set.id}>
+              {card.sets.map((cs) => (
+                <Card key={cs.id} className="border-border/50">
                   <CardHeader className="py-3">
-                    <CardTitle className="text-sm">{set.name}</CardTitle>
+                    <CardTitle className="text-sm font-serif">
+                      <Link
+                        href={`/sets/${cs.set.slug}`}
+                        className="hover:text-amber-200 transition-colors"
+                      >
+                        {cs.set.name}
+                      </Link>
+                      {cs.set.releasedAt && (
+                        <span className="text-xs text-muted-foreground ml-2 font-sans">
+                          {new Date(cs.set.releasedAt).toLocaleDateString("en-US", {
+                            month: "short",
+                            year: "numeric",
+                          })}
+                        </span>
+                      )}
+                    </CardTitle>
                   </CardHeader>
                   <CardContent className="py-2">
-                    <div className="flex flex-wrap gap-2">
-                      {set.variants.map((v) => (
+                    <div className="flex flex-wrap gap-3">
+                      {cs.variants.map((v) => (
                         <div key={v.id} className="text-xs space-y-1">
-                          <Badge variant="outline">{v.finish}</Badge>
+                          <Badge variant="outline" className="text-[10px]">
+                            {v.finish}
+                          </Badge>
+                          <Badge variant="outline" className="text-[10px] ml-1">
+                            {v.product.replace(/_/g, " ")}
+                          </Badge>
                           {v.artist && (
-                            <p className="text-muted-foreground">
-                              🎨 {v.artist}
-                            </p>
+                            <p className="text-muted-foreground">🎨 {v.artist}</p>
                           )}
                           {v.flavorText && (
                             <p className="italic text-muted-foreground">

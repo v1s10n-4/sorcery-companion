@@ -1,20 +1,35 @@
 -- CreateTable
+CREATE TABLE "Set" (
+    "id" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "slug" TEXT NOT NULL,
+    "releasedAt" TIMESTAMP(3),
+    "description" TEXT,
+    "cardCount" INTEGER NOT NULL DEFAULT 0,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "Set_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "Card" (
     "id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "type" TEXT NOT NULL,
-    "rarity" TEXT NOT NULL,
+    "rarity" TEXT,
     "rulesText" TEXT,
     "cost" INTEGER,
     "attack" INTEGER,
     "defence" INTEGER,
     "life" INTEGER,
-    "elements" TEXT,
-    "subTypes" TEXT,
+    "subTypes" TEXT[],
+    "elements" TEXT[],
     "thresholdAir" INTEGER NOT NULL DEFAULT 0,
     "thresholdEarth" INTEGER NOT NULL DEFAULT 0,
     "thresholdFire" INTEGER NOT NULL DEFAULT 0,
     "thresholdWater" INTEGER NOT NULL DEFAULT 0,
+    "keywords" TEXT[],
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -24,8 +39,8 @@ CREATE TABLE "Card" (
 -- CreateTable
 CREATE TABLE "CardSet" (
     "id" TEXT NOT NULL,
-    "name" TEXT NOT NULL,
-    "releasedAt" TIMESTAMP(3),
+    "setId" TEXT NOT NULL,
+    "cardId" TEXT NOT NULL,
     "rarity" TEXT,
     "type" TEXT,
     "rulesText" TEXT,
@@ -37,7 +52,6 @@ CREATE TABLE "CardSet" (
     "thresholdEarth" INTEGER,
     "thresholdFire" INTEGER,
     "thresholdWater" INTEGER,
-    "cardId" TEXT NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -53,7 +67,6 @@ CREATE TABLE "CardVariant" (
     "artist" TEXT,
     "flavorText" TEXT,
     "typeText" TEXT,
-    "imageUrl" TEXT,
     "cardId" TEXT NOT NULL,
     "setId" TEXT NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -88,8 +101,11 @@ CREATE TABLE "Collection" (
 CREATE TABLE "CollectionCard" (
     "id" TEXT NOT NULL,
     "quantity" INTEGER NOT NULL DEFAULT 1,
+    "condition" TEXT NOT NULL DEFAULT 'NM',
+    "notes" TEXT,
     "collectionId" TEXT NOT NULL,
     "cardId" TEXT NOT NULL,
+    "variantId" TEXT NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -121,10 +137,16 @@ CREATE TABLE "DeckCard" (
 );
 
 -- CreateIndex
+CREATE UNIQUE INDEX "Set_name_key" ON "Set"("name");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Set_slug_key" ON "Set"("slug");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "Card_name_key" ON "Card"("name");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "CardSet_cardId_name_key" ON "CardSet"("cardId", "name");
+CREATE UNIQUE INDEX "CardSet_cardId_setId_key" ON "CardSet"("cardId", "setId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "CardVariant_slug_key" ON "CardVariant"("slug");
@@ -133,10 +155,13 @@ CREATE UNIQUE INDEX "CardVariant_slug_key" ON "CardVariant"("slug");
 CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "CollectionCard_collectionId_cardId_key" ON "CollectionCard"("collectionId", "cardId");
+CREATE UNIQUE INDEX "CollectionCard_collectionId_variantId_key" ON "CollectionCard"("collectionId", "variantId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "DeckCard_deckId_cardId_key" ON "DeckCard"("deckId", "cardId");
+
+-- AddForeignKey
+ALTER TABLE "CardSet" ADD CONSTRAINT "CardSet_setId_fkey" FOREIGN KEY ("setId") REFERENCES "Set"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "CardSet" ADD CONSTRAINT "CardSet_cardId_fkey" FOREIGN KEY ("cardId") REFERENCES "Card"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -155,6 +180,9 @@ ALTER TABLE "CollectionCard" ADD CONSTRAINT "CollectionCard_collectionId_fkey" F
 
 -- AddForeignKey
 ALTER TABLE "CollectionCard" ADD CONSTRAINT "CollectionCard_cardId_fkey" FOREIGN KEY ("cardId") REFERENCES "Card"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "CollectionCard" ADD CONSTRAINT "CollectionCard_variantId_fkey" FOREIGN KEY ("variantId") REFERENCES "CardVariant"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Deck" ADD CONSTRAINT "Deck_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
