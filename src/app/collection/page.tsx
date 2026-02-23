@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { CollectionView } from "@/components/collection/collection-view";
+import { SharingSettings } from "@/components/collection/sharing-settings";
 
 export const metadata: Metadata = {
   title: "My Collection — Sorcery Companion",
@@ -112,7 +113,16 @@ export default async function CollectionPage() {
           totalMarketValue,
           totalCostBasis,
         }}
+        isPremium={user.plan === "premium"}
       />
+      <div className="mt-6">
+        <SharingSettings
+          collectionId={collection.id}
+          isPublic={collection.isPublic}
+          slug={collection.slug}
+          description={collection.description}
+        />
+      </div>
     </main>
   );
 }
