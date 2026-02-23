@@ -49,17 +49,23 @@ export function CardGrid({ cards }: { cards: BrowserCard[] }) {
               <p className="text-[11px] truncate text-muted-foreground group-hover:text-foreground transition-colors flex-1 min-w-0">
                 {card.name}
               </p>
-              {priceDiff !== null && priceDiff !== 0 && (
-                <span className={cn(
-                  "text-[10px] font-semibold whitespace-nowrap shrink-0",
-                  priceDiff > 0 ? "text-green-400" : "text-red-400"
-                )}>
-                  {priceDiff > 0 ? "+" : ""}{priceDiff.toFixed(1)}%
+              {card.marketPrice != null ? (
+                <span className="text-[10px] whitespace-nowrap shrink-0 flex items-center gap-1">
+                  <span className="text-amber-300">${card.marketPrice.toFixed(2)}</span>
+                  {priceDiff !== null && priceDiff !== 0 ? (
+                    <span className={cn(
+                      "font-semibold",
+                      priceDiff > 0 ? "text-green-400" : "text-red-400"
+                    )}>
+                      {priceDiff > 0 ? "+" : ""}{priceDiff.toFixed(1)}%
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground/50">0%</span>
+                  )}
                 </span>
-              )}
-              {priceDiff === null && card.marketPrice != null && (
-                <span className="text-[10px] text-amber-300/70 whitespace-nowrap shrink-0">
-                  ${card.marketPrice.toFixed(2)}
+              ) : (
+                <span className="text-[10px] text-muted-foreground/40 whitespace-nowrap shrink-0">
+                  N/A
                 </span>
               )}
             </div>
