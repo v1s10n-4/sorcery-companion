@@ -45,6 +45,9 @@ export const SORT_OPTIONS: { value: SortKey; label: string }[] = [
 
 export const ELEMENTS = ["Fire", "Water", "Earth", "Air"] as const;
 
+// Canonical order: most common → rarest
+export const RARITY_ORDER = ["Ordinary", "Exceptional", "Elite", "Unique"] as const;
+
 export const RARITY_COLORS: Record<string, string> = {
   Ordinary: "border-zinc-500 text-zinc-400",
   Exceptional: "border-sky-500 text-sky-400",

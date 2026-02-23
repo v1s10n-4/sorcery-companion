@@ -10,6 +10,7 @@ import { FilterSheet } from "@/components/filter-sheet";
 import { SortMenu } from "@/components/sort-menu";
 import { ElementIcon } from "@/components/icons";
 import type { BrowserCard, SetInfo, Filters, SortKey } from "@/lib/types";
+import { RARITY_ORDER } from "@/lib/types";
 
 const PAGE_SIZE = 42; // 7 cols × 6 rows on XL
 
@@ -37,11 +38,10 @@ export function CardBrowser({ cards, sets }: CardBrowserProps) {
     [cards]
   );
 
-  const rarities = useMemo(
-    () =>
-      [...new Set(cards.map((c) => c.rarity).filter(Boolean))].sort() as string[],
-    [cards]
-  );
+  const rarities = useMemo(() => {
+    const present = new Set(cards.map((c) => c.rarity).filter(Boolean));
+    return RARITY_ORDER.filter((r) => present.has(r)) as string[];
+  }, [cards]);
 
   // Filter + sort
   const filtered = useMemo(() => {
