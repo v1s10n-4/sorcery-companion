@@ -32,7 +32,20 @@ export const getAllCards = cache(async (): Promise<BrowserCard[]> => {
       variants: {
         take: 1,
         orderBy: { createdAt: "asc" },
-        select: { slug: true, blurDataUrl: true },
+        select: {
+          slug: true,
+          blurDataUrl: true,
+          tcgplayerProducts: {
+            take: 1,
+            select: {
+              priceSnapshots: {
+                orderBy: { recordedAt: "desc" },
+                take: 2,
+                select: { marketPrice: true },
+              },
+            },
+          },
+        },
       },
       sets: {
         select: { set: { select: { slug: true } } },
@@ -61,6 +74,8 @@ export const getAllCards = cache(async (): Promise<BrowserCard[]> => {
     variantSlug: c.variants[0]?.slug ?? null,
     blurDataUrl: c.variants[0]?.blurDataUrl ?? null,
     setSlugs: c.sets.map((cs) => cs.set.slug),
+    marketPrice: c.variants[0]?.tcgplayerProducts[0]?.priceSnapshots[0]?.marketPrice ?? null,
+    previousPrice: c.variants[0]?.tcgplayerProducts[0]?.priceSnapshots[1]?.marketPrice ?? null,
   }));
 });
 

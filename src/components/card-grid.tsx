@@ -1,7 +1,5 @@
 import Link from "next/link";
 import { CardImage } from "@/components/card-image";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { RARITY_COLORS } from "@/lib/types";
 import type { BrowserCard } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -17,56 +15,57 @@ export function CardGrid({ cards }: { cards: BrowserCard[] }) {
 
   return (
     <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-2">
-      {cards.map((card) => (
-        <Link
-          key={card.id}
-          href={`/cards/${card.id}`}
-          className="group"
-          prefetch={false}
-        >
-          <div className="relative overflow-hidden rounded-lg bg-muted/30">
-            {card.variantSlug ? (
-              <CardImage
-                slug={card.variantSlug}
-                name={card.name}
-                width={260}
-                height={364}
-                blurDataUrl={card.blurDataUrl}
-                className="w-full h-auto transition-transform duration-200 group-hover:scale-105"
-              />
-            ) : (
-              <div className="aspect-[5/7] flex items-center justify-center text-xs text-muted-foreground">
-                No image
-              </div>
-            )}
-            {/* Quick info overlay on hover */}
-            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/50 to-transparent p-2 pt-6 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-              <div className="flex items-center gap-1 flex-wrap">
-                {card.rarity && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className={cn(
-                        "text-[9px] px-1.5 py-0.5 rounded border",
-                        RARITY_COLORS[card.rarity] || "border-border text-muted-foreground"
-                      )}>
-                        {card.rarity.charAt(0)}
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent>{card.rarity}</TooltipContent>
-                  </Tooltip>
-                )}
-                <span className="text-[9px] text-white/70">{card.type}</span>
-                {card.cost !== null && (
-                  <span className="text-[9px] text-amber-300 ml-auto">⬡{card.cost}</span>
-                )}
-              </div>
+      {cards.map((card) => {
+        const priceDiff =
+          card.marketPrice != null && card.previousPrice != null && card.previousPrice > 0
+            ? ((card.marketPrice - card.previousPrice) / card.previousPrice) * 100
+            : null;
+
+        return (
+          <Link
+            key={card.id}
+            href={`/cards/${card.id}`}
+            className="group"
+            prefetch={false}
+          >
+            <div className="relative overflow-hidden rounded-lg bg-muted/30">
+              {card.variantSlug ? (
+                <CardImage
+                  slug={card.variantSlug}
+                  name={card.name}
+                  width={260}
+                  height={364}
+                  blurDataUrl={card.blurDataUrl}
+                  className="w-full h-auto transition-transform duration-200 group-hover:scale-105"
+                />
+              ) : (
+                <div className="aspect-[5/7] flex items-center justify-center text-xs text-muted-foreground">
+                  No image
+                </div>
+              )}
             </div>
-          </div>
-          <p className="text-[11px] mt-1 text-center truncate text-muted-foreground group-hover:text-foreground transition-colors px-0.5">
-            {card.name}
-          </p>
-        </Link>
-      ))}
+            {/* Info below image */}
+            <div className="mt-1 px-0.5 flex items-center justify-between gap-1">
+              <p className="text-[11px] truncate text-muted-foreground group-hover:text-foreground transition-colors flex-1 min-w-0">
+                {card.name}
+              </p>
+              {priceDiff !== null && priceDiff !== 0 && (
+                <span className={cn(
+                  "text-[10px] font-semibold whitespace-nowrap shrink-0",
+                  priceDiff > 0 ? "text-green-400" : "text-red-400"
+                )}>
+                  {priceDiff > 0 ? "+" : ""}{priceDiff.toFixed(1)}%
+                </span>
+              )}
+              {priceDiff === null && card.marketPrice != null && (
+                <span className="text-[10px] text-amber-300/70 whitespace-nowrap shrink-0">
+                  ${card.marketPrice.toFixed(2)}
+                </span>
+              )}
+            </div>
+          </Link>
+        );
+      })}
     </div>
   );
 }

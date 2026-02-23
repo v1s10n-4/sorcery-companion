@@ -20,6 +20,9 @@ export interface BrowserCard {
   variantSlug: string | null;
   blurDataUrl: string | null;
   setSlugs: string[];
+  // Price data (from first variant's TCGplayer product)
+  marketPrice: number | null;
+  previousPrice: number | null; // previous day's price for 24h change
 }
 
 export interface SetInfo {
