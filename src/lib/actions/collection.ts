@@ -110,6 +110,40 @@ export async function removeFromCollection(collectionCardId: string) {
   return { success: true };
 }
 
+/** Add a card to collection by card ID (resolves default Standard variant) */
+export async function addToCollectionByCard(cardId: string) {
+  const user = await requireUser();
+
+  // Find the default Standard variant for this card
+  const variant = await prisma.cardVariant.findFirst({
+    where: { cardId },
+    orderBy: [
+      { finish: "asc" }, // "Standard" sorts before other finishes
+      { createdAt: "asc" },
+    ],
+    select: {
+      id: true,
+      tcgplayerProducts: {
+        include: {
+          priceSnapshots: {
+            orderBy: { recordedAt: "desc" },
+            take: 1,
+          },
+        },
+        take: 1,
+      },
+    },
+  });
+
+  if (!variant) throw new Error("No variant found for card");
+
+  return addToCollection({
+    variantId: variant.id,
+    quantity: 1,
+    purchasePrice: null, // will default to market price in addToCollection
+  });
+}
+
 export async function updateCollectionCard(
   collectionCardId: string,
   data: {

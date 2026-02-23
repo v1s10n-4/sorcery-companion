@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import {
   Sheet,
   SheetClose,
@@ -523,11 +523,38 @@ function RangeSliderFilter({
   bounds: StatRange;
   onChange: (min?: number, max?: number) => void;
 }) {
-  const currentMin = range?.exact ?? range?.min ?? bounds.min;
-  const currentMax = range?.exact ?? range?.max ?? bounds.max;
-  const isActive =
-    range != null &&
-    (currentMin > bounds.min || currentMax < bounds.max);
+  const externalMin = range?.exact ?? range?.min ?? bounds.min;
+  const externalMax = range?.exact ?? range?.max ?? bounds.max;
+
+  // Local state for smooth slider dragging (no URL update per tick)
+  const [localValue, setLocalValue] = useState<[number, number]>([externalMin, externalMax]);
+  const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  // Sync from external when query changes (e.g. clear all)
+  useEffect(() => {
+    setLocalValue([externalMin, externalMax]);
+  }, [externalMin, externalMax]);
+
+  const isActive = localValue[0] > bounds.min || localValue[1] < bounds.max;
+
+  const handleChange = (value: [number, number]) => {
+    setLocalValue(value);
+    // Debounce the URL/query update
+    clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      const min = value[0] > bounds.min ? value[0] : undefined;
+      const max = value[1] < bounds.max ? value[1] : undefined;
+      onChange(min, max);
+    }, 300);
+  };
+
+  // Also commit on pointer up for immediate feedback when releasing
+  const handleCommit = () => {
+    clearTimeout(timerRef.current);
+    const min = localValue[0] > bounds.min ? localValue[0] : undefined;
+    const max = localValue[1] < bounds.max ? localValue[1] : undefined;
+    onChange(min, max);
+  };
 
   return (
     <FilterGroupSimple label={label}>
@@ -539,7 +566,7 @@ function RangeSliderFilter({
               isActive && "text-amber-300"
             )}
           >
-            {currentMin}
+            {localValue[0]}
           </span>
           <span className="text-[10px] opacity-50">
             {bounds.min}–{bounds.max}
@@ -550,19 +577,16 @@ function RangeSliderFilter({
               isActive && "text-amber-300"
             )}
           >
-            {currentMax}
+            {localValue[1]}
           </span>
         </div>
         <Slider
           min={bounds.min}
           max={bounds.max}
           step={1}
-          value={[currentMin, currentMax]}
-          onValueChange={([newMin, newMax]) => {
-            const min = newMin > bounds.min ? newMin : undefined;
-            const max = newMax < bounds.max ? newMax : undefined;
-            onChange(min, max);
-          }}
+          value={localValue}
+          onValueChange={handleChange}
+          onValueCommit={handleCommit}
         />
       </div>
     </FilterGroupSimple>

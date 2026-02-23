@@ -1,11 +1,15 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getAllCards, getAllSets } from "@/lib/data";
-import { CollectionBrowser, type CollectionEntry } from "@/components/collection/collection-browser";
+import { CardBrowser, type CardOverlayEntry } from "@/components/card-browser";
 import { SharingSettings } from "@/components/collection/sharing-settings";
 import { CardBrowserSkeleton } from "@/components/skeletons";
+import { CollectionStats } from "@/components/collection/collection-stats";
+import { Button } from "@/components/ui/button";
+import { Upload, Download, BarChart3 } from "lucide-react";
 import type { SetInfo } from "@/lib/types";
 
 export const metadata: Metadata = {
@@ -88,45 +92,80 @@ async function CollectionContent() {
     });
   }
 
-  const collectionEntries: CollectionEntry[] = collection.cards.map((cc) => {
+  const overlayEntries: CardOverlayEntry[] = collection.cards.map((cc) => {
     const marketPrice =
       cc.variant.tcgplayerProducts[0]?.priceSnapshots[0]?.marketPrice ?? null;
     return {
-      id: cc.id,
-      variantId: cc.variantId,
       cardId: cc.cardId,
       quantity: cc.quantity,
-      condition: cc.condition,
-      purchasePrice: cc.purchasePrice,
       marketPrice,
-      finish: cc.variant.finish,
-      variantSlug: cc.variant.slug,
+      purchasePrice: cc.purchasePrice,
     };
   });
 
-  const totalCards = collectionEntries.reduce((s, e) => s + e.quantity, 0);
-  const totalMarketValue = collectionEntries.reduce(
-    (s, e) => s + (e.marketPrice ?? 0) * e.quantity,
-    0
+  const totalCards = overlayEntries.reduce((s, e) => s + e.quantity, 0);
+  const totalMarketValue = overlayEntries.reduce(
+    (s, e) => s + (e.marketPrice ?? 0) * e.quantity, 0
   );
-  const totalCostBasis = collectionEntries.reduce(
-    (s, e) => s + (e.purchasePrice ?? 0) * e.quantity,
-    0
+  const totalCostBasis = overlayEntries.reduce(
+    (s, e) => s + (e.purchasePrice ?? 0) * e.quantity, 0
+  );
+
+  // Get user's decks for the selection action bar
+  const userDecks = await prisma.deck.findMany({
+    where: { userId: user.id },
+    select: { id: true, name: true },
+    orderBy: { updatedAt: "desc" },
+  });
+
+  const statsHeader = (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold font-serif text-amber-100">
+          My Collection
+        </h1>
+        <div className="flex items-center gap-2">
+          <Link href="/collection/stats">
+            <Button variant="outline" size="sm" className="gap-1.5">
+              <BarChart3 className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Stats</span>
+            </Button>
+          </Link>
+          <Link href="/collection/import">
+            <Button variant="outline" size="sm" className="gap-1.5">
+              <Upload className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Import</span>
+            </Button>
+          </Link>
+          <Link href="/collection/export">
+            <Button variant="outline" size="sm" className="gap-1.5">
+              <Download className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Export</span>
+            </Button>
+          </Link>
+        </div>
+      </div>
+      <CollectionStats
+        uniqueCards={overlayEntries.length}
+        totalCards={totalCards}
+        totalMarketValue={totalMarketValue}
+        totalCostBasis={totalCostBasis}
+      />
+    </div>
   );
 
   return (
     <>
-      <CollectionBrowser
+      <CardBrowser
         cards={cards}
         sets={sets as SetInfo[]}
-        collectionEntries={collectionEntries}
-        collectionId={collection.id}
-        stats={{
-          uniqueCards: collectionEntries.length,
-          totalCards,
-          totalMarketValue,
-          totalCostBasis,
-        }}
+        header={statsHeader}
+        overlay={overlayEntries}
+        showOwnedToggle
+        defaultOwnedOnly
+        selectable
+        userDecks={userDecks}
+        searchPlaceholder="Search collection..."
       />
       <div className="mt-6">
         <SharingSettings

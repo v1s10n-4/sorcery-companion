@@ -1,11 +1,28 @@
 "use client";
 
 import { useMemo, useEffect, useRef, useState, useCallback } from "react";
-import { Search, X, CircleHelp, Loader2 } from "lucide-react";
+import dynamic from "next/dynamic";
+import Link from "next/link";
+import {
+  Search,
+  X,
+  CircleHelp,
+  Loader2,
+  TrendingUp,
+  TrendingDown,
+  Eye,
+  EyeOff,
+} from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useQueryState, parseAsString, parseAsStringLiteral } from "nuqs";
 import { useDebounce } from "@/hooks/use-debounce";
-import { CardGrid } from "@/components/card-grid";
+import { CardImage } from "@/components/card-image";
 import { FilterSheet } from "@/components/filter-sheet";
 import { SortMenu } from "@/components/sort-menu";
 import {
@@ -19,12 +36,43 @@ import type { BrowserCard, SetInfo, SortKey } from "@/lib/types";
 import { ELEMENTS, RARITY_ORDER, SORT_OPTIONS } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
+// Dynamically import the selection action bar (only for authenticated users)
+const SelectionActionBar = dynamic(
+  () => import("@/components/selection-action-bar").then((m) => m.SelectionActionBar),
+  { ssr: false }
+);
+
 const BATCH_SIZE = 42;
 const SORT_KEYS = SORT_OPTIONS.map((o) => o.value);
 
-interface CardBrowserProps {
+// ── Overlay data for collection/deck badges ──
+
+export interface CardOverlayEntry {
+  cardId: string;
+  quantity: number;
+  marketPrice: number | null;
+  purchasePrice: number | null;
+}
+
+export interface CardBrowserProps {
   cards: BrowserCard[];
   sets: SetInfo[];
+  /** Optional header (e.g. collection stats) rendered above search bar */
+  header?: React.ReactNode;
+  /** Collection/deck overlay data to show badges on cards */
+  overlay?: CardOverlayEntry[];
+  /** Show owned/all toggle when overlay is provided */
+  showOwnedToggle?: boolean;
+  /** Default to showing only overlaid cards */
+  defaultOwnedOnly?: boolean;
+  /** Enable card selection mode (requires auth) */
+  selectable?: boolean;
+  /** User's deck list for the action bar */
+  userDecks?: { id: string; name: string }[];
+  /** Extra toolbar buttons */
+  toolbarSlot?: React.ReactNode;
+  /** Search placeholder */
+  searchPlaceholder?: string;
 }
 
 function sortCards(cards: BrowserCard[], sort: SortKey): BrowserCard[] {
@@ -44,8 +92,18 @@ function sortCards(cards: BrowserCard[], sort: SortKey): BrowserCard[] {
   });
 }
 
-export function CardBrowser({ cards, sets }: CardBrowserProps) {
-  // Single URL state for search + all filters
+export function CardBrowser({
+  cards,
+  sets,
+  header,
+  overlay,
+  showOwnedToggle = false,
+  defaultOwnedOnly = true,
+  selectable = false,
+  userDecks,
+  toolbarSlot,
+  searchPlaceholder = 'Search cards... (try t:minion e:fire c:>3)',
+}: CardBrowserProps) {
   const [q, setQ] = useQueryState(
     "q",
     parseAsString.withDefault("").withOptions({
@@ -64,11 +122,39 @@ export function CardBrowser({ cards, sets }: CardBrowserProps) {
 
   const [visibleCount, setVisibleCount] = useState(BATCH_SIZE);
   const [showHelp, setShowHelp] = useState(false);
+  const [showOwnedOnly, setShowOwnedOnly] = useState(defaultOwnedOnly && !!overlay);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   const debouncedQ = useDebounce(q, 150);
 
-  // Derive unique filter options from data
+  // Build overlay lookup
+  const overlayMap = useMemo(() => {
+    if (!overlay) return null;
+    const map = new Map<string, { qty: number; market: number; cost: number }>();
+    for (const e of overlay) {
+      const existing = map.get(e.cardId);
+      if (existing) {
+        existing.qty += e.quantity;
+        existing.market += (e.marketPrice ?? 0) * e.quantity;
+        existing.cost += (e.purchasePrice ?? 0) * e.quantity;
+      } else {
+        map.set(e.cardId, {
+          qty: e.quantity,
+          market: (e.marketPrice ?? 0) * e.quantity,
+          cost: (e.purchasePrice ?? 0) * e.quantity,
+        });
+      }
+    }
+    return map;
+  }, [overlay]);
+
+  const ownedCardIds = useMemo(
+    () => (overlayMap ? new Set(overlayMap.keys()) : null),
+    [overlayMap]
+  );
+
+  // Filter options
   const allTypes = useMemo(
     () => [...new Set(cards.map((c) => c.type))].sort(),
     [cards]
@@ -96,67 +182,49 @@ export function CardBrowser({ cards, sets }: CardBrowserProps) {
       .map(([name]) => name);
   }, [cards]);
 
-  // ── Search + Filter pipeline ──
-
   const tokens = useMemo(() => tokenize(debouncedQ), [debouncedQ]);
   const activeFilters = useMemo(() => extractFilters(tokens), [tokens]);
 
   const filtered = useMemo(() => {
-    const matched =
-      tokens.length === 0
-        ? cards
-        : cards.filter((c) => matchesTokens(c, tokens));
-    return sortCards(matched, sort);
-  }, [cards, tokens, sort]);
-
-  // ── Faceted counts ──
+    let result = tokens.length === 0 ? cards : cards.filter((c) => matchesTokens(c, tokens));
+    if (showOwnedOnly && ownedCardIds) {
+      result = result.filter((c) => ownedCardIds.has(c.id));
+    }
+    return sortCards(result, sort);
+  }, [cards, tokens, sort, showOwnedOnly, ownedCardIds]);
 
   const facetCounts = useMemo(() => {
-    const woElement = countWithout(cards, tokens, "element");
-    const woType = countWithout(cards, tokens, "type");
-    const woRarity = countWithout(cards, tokens, "rarity");
-    const woSet = countWithout(cards, tokens, "set");
-    const woSubtype = countWithout(cards, tokens, "subtype");
-    const woKeyword = countWithout(cards, tokens, "keyword");
+    const base = showOwnedOnly && ownedCardIds
+      ? cards.filter((c) => ownedCardIds.has(c.id))
+      : cards;
+    const woElement = countWithout(base, tokens, "element");
+    const woType = countWithout(base, tokens, "type");
+    const woRarity = countWithout(base, tokens, "rarity");
+    const woSet = countWithout(base, tokens, "set");
+    const woSubtype = countWithout(base, tokens, "subtype");
+    const woKeyword = countWithout(base, tokens, "keyword");
 
     return {
       elements: Object.fromEntries(
-        ELEMENTS.map((e) => [
-          e,
-          woElement.filter((c) => c.elements.includes(e)).length,
-        ])
+        ELEMENTS.map((e) => [e, woElement.filter((c) => c.elements.includes(e)).length])
       ),
       types: Object.fromEntries(
         allTypes.map((t) => [t, woType.filter((c) => c.type === t).length])
       ),
       rarities: Object.fromEntries(
-        allRarities.map((r) => [
-          r,
-          woRarity.filter((c) => c.rarity === r).length,
-        ])
+        allRarities.map((r) => [r, woRarity.filter((c) => c.rarity === r).length])
       ),
       sets: Object.fromEntries(
-        sets.map((s) => [
-          s.slug,
-          woSet.filter((c) => c.setSlugs.includes(s.slug)).length,
-        ])
+        sets.map((s) => [s.slug, woSet.filter((c) => c.setSlugs.includes(s.slug)).length])
       ),
       subtypes: Object.fromEntries(
-        allSubtypes.map((s) => [
-          s,
-          woSubtype.filter((c) => c.subTypes.includes(s)).length,
-        ])
+        allSubtypes.map((s) => [s, woSubtype.filter((c) => c.subTypes.includes(s)).length])
       ),
       keywords: Object.fromEntries(
-        allKeywords.map((k) => [
-          k,
-          woKeyword.filter((c) => c.keywords.includes(k)).length,
-        ])
+        allKeywords.map((k) => [k, woKeyword.filter((c) => c.keywords.includes(k)).length])
       ),
     };
-  }, [cards, tokens, allTypes, allRarities, allSubtypes, allKeywords, sets]);
-
-  // ── Infinite scroll ──
+  }, [cards, tokens, allTypes, allRarities, allSubtypes, allKeywords, sets, showOwnedOnly, ownedCardIds]);
 
   const visibleCards = filtered.slice(0, visibleCount);
   const hasMore = visibleCount < filtered.length;
@@ -172,9 +240,7 @@ export function CardBrowser({ cards, sets }: CardBrowserProps) {
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
-          setVisibleCount((prev) =>
-            Math.min(prev + BATCH_SIZE, filtered.length)
-          );
+          setVisibleCount((prev) => Math.min(prev + BATCH_SIZE, filtered.length));
         }
       },
       { rootMargin: "400px" }
@@ -183,21 +249,16 @@ export function CardBrowser({ cards, sets }: CardBrowserProps) {
     return () => observer.disconnect();
   }, [hasMore, filtered.length]);
 
-  // ── Query modification handler (passed to Sheet) ──
-
   const updateQuery = useCallback(
-    (newQ: string) => {
-      setQ(newQ || null);
-    },
+    (newQ: string) => { setQ(newQ || null); },
     [setQ]
   );
 
-  // Active filter count for Sheet badge (includes negated)
-  const activeFieldCount = useMemo(() => {
-    return tokens.filter((t) => t.kind === "field").length;
-  }, [tokens]);
+  const activeFieldCount = useMemo(
+    () => tokens.filter((t) => t.kind === "field").length,
+    [tokens]
+  );
 
-  // Stat ranges for sliders
   const statRanges = useMemo(() => {
     let costMax = 0, atkMax = 0, defMax = 0;
     for (const c of cards) {
@@ -212,15 +273,30 @@ export function CardBrowser({ cards, sets }: CardBrowserProps) {
     };
   }, [cards]);
 
+  // Selection handlers
+  const toggleSelect = useCallback((cardId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(cardId)) next.delete(cardId);
+      else next.add(cardId);
+      return next;
+    });
+  }, []);
+
+  const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
+
   return (
     <div className="flex flex-col gap-3">
+      {/* Optional header */}
+      {header}
+
       {/* Search + Filter + Sort */}
       <div className="flex gap-2 items-center">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
           <Input
             type="search"
-            placeholder='Search cards... (try t:minion e:fire c:>3)'
+            placeholder={searchPlaceholder}
             value={q}
             onChange={(e) => setQ(e.target.value || null)}
             className="pl-9 pr-16 h-9"
@@ -244,6 +320,28 @@ export function CardBrowser({ cards, sets }: CardBrowserProps) {
             </button>
           </div>
         </div>
+
+        {/* Owned toggle */}
+        {showOwnedToggle && overlayMap && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className={cn("gap-1.5", showOwnedOnly && "border-amber-500/50 text-amber-200")}
+                onClick={() => setShowOwnedOnly(!showOwnedOnly)}
+              >
+                {showOwnedOnly ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                <span className="hidden sm:inline">{showOwnedOnly ? "Owned" : "All"}</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {showOwnedOnly ? "Showing owned cards only — click to show all" : "Showing all cards — click to filter to owned"}
+            </TooltipContent>
+          </Tooltip>
+        )}
+
+        {toolbarSlot}
 
         <FilterSheet
           query={q}
@@ -282,16 +380,162 @@ export function CardBrowser({ cards, sets }: CardBrowserProps) {
       <p className="text-xs text-muted-foreground">
         {filtered.length} card{filtered.length !== 1 ? "s" : ""}
         {hasMore && <span> · showing {visibleCount}</span>}
+        {selectedIds.size > 0 && (
+          <span className="text-amber-300 ml-2">
+            · {selectedIds.size} selected
+          </span>
+        )}
       </p>
 
       {/* Card grid */}
-      <CardGrid cards={visibleCards} />
+      {filtered.length === 0 ? (
+        <div className="text-center py-16 text-muted-foreground">
+          <p className="text-lg">No cards found</p>
+          <p className="text-sm mt-1">Try adjusting your search or filters</p>
+        </div>
+      ) : (
+        <div className={cn(
+          "grid gap-2",
+          overlay
+            ? "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3"
+            : "grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7"
+        )}>
+          {visibleCards.map((card) => {
+            const overlayData = overlayMap?.get(card.id);
+            const isSelected = selectedIds.has(card.id);
+            const priceDiff =
+              card.marketPrice != null && card.previousPrice != null && card.previousPrice > 0
+                ? ((card.marketPrice - card.previousPrice) / card.previousPrice) * 100
+                : null;
+
+            // Collection overlay perf
+            const perfPct = overlayData && overlayData.cost > 0
+              ? ((overlayData.market - overlayData.cost) / overlayData.cost) * 100
+              : null;
+            const perfAbs = overlayData && overlayData.cost > 0
+              ? overlayData.market - overlayData.cost
+              : null;
+
+            return (
+              <div key={card.id} className="group relative">
+                {/* Selection checkbox area */}
+                {selectable && (
+                  <button
+                    onClick={(e) => { e.preventDefault(); toggleSelect(card.id); }}
+                    className={cn(
+                      "absolute top-1.5 left-1.5 z-10 h-5 w-5 rounded border-2 flex items-center justify-center transition-all cursor-pointer",
+                      isSelected
+                        ? "bg-amber-500 border-amber-500 text-black"
+                        : "border-white/40 bg-black/30 opacity-0 group-hover:opacity-100"
+                    )}
+                  >
+                    {isSelected && (
+                      <svg className="h-3 w-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M2 6l3 3 5-5" />
+                      </svg>
+                    )}
+                  </button>
+                )}
+
+                <Link href={`/cards/${card.id}`} prefetch={false}>
+                  <div className={cn(
+                    "relative overflow-hidden rounded-lg bg-muted/30",
+                    isSelected && "ring-2 ring-amber-500"
+                  )}>
+                    {card.variantSlug ? (
+                      <CardImage
+                        slug={card.variantSlug}
+                        name={card.name}
+                        width={260}
+                        height={364}
+                        blurDataUrl={card.blurDataUrl}
+                        className={cn(
+                          "w-full h-auto transition-transform duration-200 group-hover:scale-105",
+                          overlay && !overlayData && "opacity-40"
+                        )}
+                      />
+                    ) : (
+                      <div className="aspect-[5/7] flex items-center justify-center text-xs text-muted-foreground">
+                        No image
+                      </div>
+                    )}
+
+                    {/* Collection overlay badges */}
+                    {overlayData && (
+                      <>
+                        <div className="absolute bottom-1.5 left-1.5 bg-black/75 text-white text-[10px] font-bold px-1.5 py-0.5 rounded min-w-[20px] text-center">
+                          {overlayData.qty}
+                        </div>
+                        {overlayData.market > 0 && (
+                          <div className="absolute bottom-1.5 right-1.5 bg-black/75 text-amber-300 text-[10px] font-bold px-1.5 py-0.5 rounded">
+                            ${overlayData.market.toFixed(2)}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </Link>
+
+                {/* Info below image */}
+                <div className="mt-1 px-0.5 flex items-center justify-between gap-1">
+                  <p className="text-[11px] truncate text-muted-foreground group-hover:text-foreground transition-colors flex-1 min-w-0">
+                    {card.name}
+                  </p>
+                  {/* Collection mode: show perf vs purchase price */}
+                  {overlay && overlayData && perfPct !== null ? (
+                    <span className={cn(
+                      "text-[10px] font-semibold whitespace-nowrap shrink-0 flex items-center gap-0.5",
+                      perfPct >= 0 ? "text-green-400" : "text-red-400"
+                    )}>
+                      {perfPct >= 0 ? "+" : ""}{perfAbs!.toFixed(2)}
+                      <span className="text-[9px] opacity-75">
+                        ({perfPct >= 0 ? "+" : ""}{perfPct.toFixed(0)}%)
+                      </span>
+                    </span>
+                  ) : (
+                    /* Browse mode: show market price + 24h change */
+                    card.marketPrice != null ? (
+                      <span className="text-[10px] whitespace-nowrap shrink-0 flex items-center gap-1">
+                        <span className="text-amber-300">${card.marketPrice.toFixed(2)}</span>
+                        {priceDiff !== null && priceDiff !== 0 ? (
+                          <span className={cn(
+                            "font-semibold",
+                            priceDiff > 0 ? "text-green-400" : "text-red-400"
+                          )}>
+                            {priceDiff > 0 ? "+" : ""}{priceDiff.toFixed(1)}%
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground/50">0%</span>
+                        )}
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-muted-foreground/40 whitespace-nowrap shrink-0">
+                        N/A
+                      </span>
+                    )
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Infinite scroll sentinel */}
       {hasMore && (
         <div ref={sentinelRef} className="flex justify-center py-8">
           <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
         </div>
+      )}
+
+      {/* Selection action bar (dynamically loaded) */}
+      {selectable && selectedIds.size > 0 && (
+        <SelectionActionBar
+          selectedCardIds={selectedIds}
+          cards={cards}
+          userDecks={userDecks ?? []}
+          onClear={clearSelection}
+        />
       )}
     </div>
   );
