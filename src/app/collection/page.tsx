@@ -1,15 +1,33 @@
+import { Suspense } from "react";
 import type { Metadata } from "next";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { CollectionView } from "@/components/collection/collection-view";
+import { getAllCards, getAllSets } from "@/lib/data";
+import { CollectionBrowser, type CollectionEntry } from "@/components/collection/collection-browser";
 import { SharingSettings } from "@/components/collection/sharing-settings";
+import { CardBrowserSkeleton } from "@/components/skeletons";
+import type { SetInfo } from "@/lib/types";
 
 export const metadata: Metadata = {
   title: "My Collection — Sorcery Companion",
 };
 
 export default async function CollectionPage() {
-  const user = await requireUser();
+  return (
+    <main className="container mx-auto px-3 sm:px-4 py-4 sm:py-6 max-w-[1400px]">
+      <Suspense fallback={<CardBrowserSkeleton />}>
+        <CollectionContent />
+      </Suspense>
+    </main>
+  );
+}
+
+async function CollectionContent() {
+  const [user, cards, sets] = await Promise.all([
+    requireUser(),
+    getAllCards(),
+    getAllSets(),
+  ]);
 
   // Get or create default collection
   let collection = await prisma.collection.findFirst({
@@ -17,98 +35,94 @@ export default async function CollectionPage() {
     include: {
       cards: {
         include: {
-          card: true,
+          card: { select: { id: true } },
           variant: {
-            include: {
+            select: {
+              id: true,
+              slug: true,
+              finish: true,
               tcgplayerProducts: {
-                include: {
+                select: {
                   priceSnapshots: {
-                    orderBy: { recordedAt: "desc" },
+                    orderBy: { recordedAt: "desc" as const },
                     take: 1,
+                    select: { marketPrice: true },
                   },
                 },
+                take: 1,
               },
             },
           },
         },
-        orderBy: { createdAt: "desc" },
       },
     },
   });
 
   if (!collection) {
     collection = await prisma.collection.create({
-      data: {
-        name: "My Collection",
-        userId: user.id,
-      },
+      data: { name: "My Collection", userId: user.id },
       include: {
         cards: {
           include: {
-            card: true,
+            card: { select: { id: true } },
             variant: {
-              include: {
+              select: {
+                id: true,
+                slug: true,
+                finish: true,
                 tcgplayerProducts: {
-                  include: {
+                  select: {
                     priceSnapshots: {
-                      orderBy: { recordedAt: "desc" },
+                      orderBy: { recordedAt: "desc" as const },
                       take: 1,
+                      select: { marketPrice: true },
                     },
                   },
+                  take: 1,
                 },
               },
             },
           },
-          orderBy: { createdAt: "desc" },
         },
       },
     });
   }
 
-  // Serialize for client
-  const cards = collection.cards.map((cc) => {
-    // Find matching TCGplayer product for this variant's finish
-    const tcgProduct = cc.variant.tcgplayerProducts[0];
-    const latestPrice = tcgProduct?.priceSnapshots[0];
-
+  const collectionEntries: CollectionEntry[] = collection.cards.map((cc) => {
+    const marketPrice =
+      cc.variant.tcgplayerProducts[0]?.priceSnapshots[0]?.marketPrice ?? null;
     return {
       id: cc.id,
-      cardId: cc.cardId,
       variantId: cc.variantId,
-      cardName: cc.card.name,
-      cardType: cc.card.type,
-      elements: cc.card.elements,
-      rarity: cc.card.rarity,
-      variantSlug: cc.variant.slug,
-      finish: cc.variant.finish,
+      cardId: cc.cardId,
       quantity: cc.quantity,
       condition: cc.condition,
       purchasePrice: cc.purchasePrice,
-      purchasedAt: cc.purchasedAt?.toISOString() ?? null,
-      marketPrice: latestPrice?.marketPrice ?? null,
-      addedAt: cc.createdAt.toISOString(),
+      marketPrice,
+      finish: cc.variant.finish,
+      variantSlug: cc.variant.slug,
     };
   });
 
-  // Stats
-  const totalCards = cards.reduce((sum, c) => sum + c.quantity, 0);
-  const totalMarketValue = cards.reduce(
-    (sum, c) => sum + (c.marketPrice ?? 0) * c.quantity,
+  const totalCards = collectionEntries.reduce((s, e) => s + e.quantity, 0);
+  const totalMarketValue = collectionEntries.reduce(
+    (s, e) => s + (e.marketPrice ?? 0) * e.quantity,
     0
   );
-  const totalCostBasis = cards.reduce(
-    (sum, c) => sum + (c.purchasePrice ?? 0) * c.quantity,
+  const totalCostBasis = collectionEntries.reduce(
+    (s, e) => s + (e.purchasePrice ?? 0) * e.quantity,
     0
   );
 
   return (
-    <main className="container mx-auto px-4 py-6 max-w-5xl">
-      <CollectionView
-        collectionId={collection.id}
-        collectionName={collection.name}
+    <>
+      <CollectionBrowser
         cards={cards}
+        sets={sets as SetInfo[]}
+        collectionEntries={collectionEntries}
+        collectionId={collection.id}
         stats={{
-          uniqueCards: cards.length,
+          uniqueCards: collectionEntries.length,
           totalCards,
           totalMarketValue,
           totalCostBasis,
@@ -122,6 +136,6 @@ export default async function CollectionPage() {
           description={collection.description}
         />
       </div>
-    </main>
+    </>
   );
 }

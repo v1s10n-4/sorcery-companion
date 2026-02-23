@@ -17,6 +17,7 @@ import { AuthGateModal } from "@/components/auth/auth-gate-modal";
 interface AddToCollectionButtonProps {
   variantId: string;
   isLoggedIn: boolean;
+  marketPrice?: number | null;
 }
 
 const CONDITIONS = ["NM", "LP", "MP", "HP", "DMG"];
@@ -24,6 +25,7 @@ const CONDITIONS = ["NM", "LP", "MP", "HP", "DMG"];
 export function AddToCollectionButton({
   variantId,
   isLoggedIn,
+  marketPrice,
 }: AddToCollectionButtonProps) {
   const [expanded, setExpanded] = useState(false);
   const [quantity, setQuantity] = useState(1);
@@ -45,6 +47,7 @@ export function AddToCollectionButton({
         variantId,
         quantity,
         condition,
+        // If user didn't set a price, pass null to let server default to market price
         purchasePrice: purchasePrice ? parseFloat(purchasePrice) : null,
       });
       setSuccess(true);
@@ -121,13 +124,17 @@ export function AddToCollectionButton({
             </div>
             <div className="flex-1 min-w-[80px]">
               <label className="text-[10px] text-muted-foreground">
-                Paid ($)
+                Paid ($){marketPrice != null && !purchasePrice && (
+                  <span className="text-muted-foreground/50 ml-1">
+                    defaults to ${marketPrice.toFixed(2)}
+                  </span>
+                )}
               </label>
               <Input
                 type="number"
                 min={0}
                 step={0.01}
-                placeholder="0.00"
+                placeholder={marketPrice != null ? marketPrice.toFixed(2) : "0.00"}
                 value={purchasePrice}
                 onChange={(e) => setPurchasePrice(e.target.value)}
                 className="h-8 text-xs"

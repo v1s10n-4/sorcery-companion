@@ -158,16 +158,16 @@ export function FilterSheet({
           )}
         </Button>
       </SheetTrigger>
-      <SheetContent side="right" className="w-80 sm:w-96 overflow-y-auto px-5" showCloseButton={false} overlay={false}>
-        <SheetHeader className="pb-4 flex flex-row items-center justify-between">
+      <SheetContent side="right" className="w-80 sm:w-96 flex flex-col px-0" showCloseButton={false} overlay={false}>
+        <SheetHeader className="px-5 pb-3 border-b border-border flex flex-row items-center justify-between shrink-0">
           <SheetTitle>Filters</SheetTitle>
-          <SheetClose className="rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2">
+          <SheetClose className="rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 cursor-pointer">
             <X className="h-4 w-4" />
             <span className="sr-only">Close</span>
           </SheetClose>
         </SheetHeader>
 
-        <div className="flex flex-col gap-6">
+        <div className="flex flex-col gap-6 overflow-y-auto flex-1 px-5 pt-4">
           {/* ── Element ── */}
           <FilterGroup
             label="Element"

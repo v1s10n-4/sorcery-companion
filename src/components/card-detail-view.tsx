@@ -150,6 +150,7 @@ export function CardDetailView({ card, isLoggedIn = false }: { card: CardDetail;
         <AddToCollectionButton
           variantId={selected.id}
           isLoggedIn={isLoggedIn}
+          marketPrice={selected.prices[0]?.marketPrice}
         />
       </div>
 

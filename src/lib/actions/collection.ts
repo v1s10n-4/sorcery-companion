@@ -25,13 +25,32 @@ export async function addToCollection(input: AddToCollectionInput) {
     });
   }
 
-  // Get the variant to find its cardId
+  // Get the variant to find its cardId + current market price
   const variant = await prisma.cardVariant.findUnique({
     where: { id: input.variantId },
-    select: { cardId: true },
+    select: {
+      cardId: true,
+      tcgplayerProducts: {
+        include: {
+          priceSnapshots: {
+            orderBy: { recordedAt: "desc" },
+            take: 1,
+          },
+        },
+        take: 1,
+      },
+    },
   });
 
   if (!variant) throw new Error("Variant not found");
+
+  // Default purchase price to current market price if not specified
+  const currentMarketPrice =
+    variant.tcgplayerProducts[0]?.priceSnapshots[0]?.marketPrice ?? null;
+  const purchasePrice =
+    input.purchasePrice !== undefined
+      ? input.purchasePrice
+      : currentMarketPrice;
 
   // Upsert — if variant already in collection, add quantity
   const existing = await prisma.collectionCard.findUnique({
@@ -60,8 +79,8 @@ export async function addToCollection(input: AddToCollectionInput) {
         variantId: input.variantId,
         quantity: input.quantity ?? 1,
         condition: input.condition ?? "NM",
-        purchasePrice: input.purchasePrice ?? null,
-        purchasedAt: input.purchasePrice ? new Date() : null,
+        purchasePrice: purchasePrice,
+        purchasedAt: new Date(),
       },
     });
   }
