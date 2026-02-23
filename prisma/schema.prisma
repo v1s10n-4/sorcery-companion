@@ -212,27 +212,36 @@ model CollectionCard {
 }
 
 model Deck {
-  id     String     @id @default(cuid())
-  name   String
+  id          String     @id @default(cuid())
+  name        String
+  description String?
+  slug        String?    @unique
+  isPublic    Boolean    @default(false)
+
   user   User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId String
   cards  DeckCard[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([userId])
 }
 
 model DeckCard {
   id       String  @id @default(cuid())
   quantity Int     @default(1)
+  section  String  @default("spellbook") // avatar | atlas | spellbook
   owned    Boolean @default(false)
-  deck     Deck    @relation(fields: [deckId], references: [id], onDelete: Cascade)
-  deckId   String
-  card     Card    @relation(fields: [cardId], references: [id], onDelete: Cascade)
-  cardId   String
+
+  deck   Deck   @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  deckId String
+  card   Card   @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  cardId String
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@unique([deckId, cardId])
+  @@index([deckId])
 }
