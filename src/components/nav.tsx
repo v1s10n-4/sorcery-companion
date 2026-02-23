@@ -1,6 +1,10 @@
 import Link from "next/link";
+import { getUser } from "@/lib/auth";
+import { UserMenu } from "@/components/user-menu";
 
-export function Nav() {
+export async function Nav() {
+  const user = await getUser();
+
   return (
     <nav className="border-b border-border/50 bg-card/50 backdrop-blur-sm sticky top-0 z-50">
       <div className="container mx-auto px-4 max-w-7xl">
@@ -24,6 +28,27 @@ export function Nav() {
             >
               Sets
             </Link>
+            {user ? (
+              <>
+                <Link
+                  href="/collection"
+                  className="text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Collection
+                </Link>
+                <UserMenu
+                  name={user.name || "User"}
+                  avatarUrl={user.avatarUrl}
+                />
+              </>
+            ) : (
+              <Link
+                href="/login"
+                className="text-amber-400 hover:text-amber-300 transition-colors font-medium"
+              >
+                Sign in
+              </Link>
+            )}
           </div>
         </div>
       </div>

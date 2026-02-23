@@ -7,6 +7,7 @@ import { CardDetailSkeleton } from "@/components/skeletons";
 import { CardDetailView } from "@/components/card-detail-view";
 import { getCard } from "@/lib/data";
 import type { CardDetail, Printing, VariantPrice } from "@/lib/types";
+import { getUser } from "@/lib/auth";
 
 export const revalidate = 3600;
 
@@ -51,7 +52,7 @@ export default async function CardDetailPage({ params }: PageProps) {
 // ── Async data component ──
 
 async function CardDetailContent({ id }: { id: string }) {
-  const raw = await getCard(id);
+  const [raw, user] = await Promise.all([getCard(id), getUser()]);
   if (!raw) notFound();
 
   // Serialize into a clean, client-safe shape
@@ -123,5 +124,5 @@ async function CardDetailContent({ id }: { id: string }) {
     printings,
   };
 
-  return <CardDetailView card={card} />;
+  return <CardDetailView card={card} isLoggedIn={!!user} />;
 }

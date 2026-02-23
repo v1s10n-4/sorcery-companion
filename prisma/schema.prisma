@@ -144,31 +144,58 @@ model PriceSnapshot {
 // ─── User Data ───────────────────────────────────────────
 
 model User {
-  id          String       @id @default(cuid())
+  id          String       @id // Supabase auth.users UUID
   email       String       @unique
   name        String?
+  avatarUrl   String?
+  plan        String       @default("free") // free | premium
+
   collections Collection[]
   decks       Deck[]
+  subscription Subscription?
+
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 }
 
+model Subscription {
+  id                String   @id @default(cuid())
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId            String   @unique
+  stripeCustomerId  String?  @unique
+  stripePriceId     String?
+  status            String   @default("inactive") // active | inactive | past_due | canceled
+  currentPeriodEnd  DateTime?
+  cancelAtPeriodEnd Boolean  @default(false)
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
 model Collection {
-  id     String           @id @default(cuid())
-  name   String
+  id          String           @id @default(cuid())
+  name        String
+  description String?
+  slug        String?          @unique // for shareable URLs
+  isPublic    Boolean          @default(false)
+
   user   User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId String
   cards  CollectionCard[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([userId])
 }
 
 model CollectionCard {
-  id           String     @id @default(cuid())
-  quantity     Int        @default(1)
-  condition    String     @default("NM") // NM, LP, MP, HP, DMG
-  notes        String?
+  id              String     @id @default(cuid())
+  quantity        Int        @default(1)
+  condition       String     @default("NM") // NM, LP, MP, HP, DMG
+  notes           String?
+  purchasePrice   Float?     // what user paid per unit
+  purchasedAt     DateTime?  // when they bought it
 
   collection   Collection  @relation(fields: [collectionId], references: [id], onDelete: Cascade)
   collectionId String
@@ -181,6 +208,7 @@ model CollectionCard {
   updatedAt DateTime @updatedAt
 
   @@unique([collectionId, variantId])
+  @@index([collectionId])
 }
 
 model Deck {

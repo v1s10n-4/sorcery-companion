@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { CardImage } from "@/components/card-image";
 import { PriceDisplay } from "@/components/price-display";
+import { AddToCollectionButton } from "@/components/add-to-collection-button";
 import { ElementBadges, StatIcon, Thresholds } from "@/components/icons";
 import { Paintbrush, Check } from "lucide-react";
 import { RARITY_COLORS } from "@/lib/types";
@@ -15,7 +16,7 @@ interface VariantWithPrinting extends DetailVariant {
   printing: Printing;
 }
 
-export function CardDetailView({ card }: { card: CardDetail }) {
+export function CardDetailView({ card, isLoggedIn = false }: { card: CardDetail; isLoggedIn?: boolean }) {
   const allVariants = useMemo(
     () =>
       card.printings.flatMap((p) =>
@@ -98,6 +99,12 @@ export function CardDetailView({ card }: { card: CardDetail }) {
         {selected.prices.length > 0 && (
           <PriceDisplay prices={selected.prices} />
         )}
+
+        {/* Add to collection */}
+        <AddToCollectionButton
+          variantId={selected.id}
+          isLoggedIn={isLoggedIn}
+        />
       </div>
 
       {/* ── Right: Details ── */}
