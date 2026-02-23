@@ -25,7 +25,14 @@ export function CardDetailView({ card, isLoggedIn = false }: { card: CardDetail;
     [card.printings]
   );
 
-  const [selectedId, setSelectedId] = useState(allVariants[0]?.id ?? null);
+  // Default to Standard/non-foil variant
+  const defaultVariant = useMemo(
+    () =>
+      allVariants.find((v) => v.finish === "Standard") ?? allVariants[0],
+    [allVariants]
+  );
+
+  const [selectedId, setSelectedId] = useState(defaultVariant?.id ?? null);
 
   const selected: VariantWithPrinting | undefined = useMemo(
     () => allVariants.find((v) => v.id === selectedId) ?? allVariants[0],
