@@ -1,15 +1,20 @@
 "use client";
 
-import { useMemo, useCallback, useEffect, useRef, useState } from "react";
+import { useMemo, useEffect, useRef, useState, useCallback } from "react";
 import { Search, X, CircleHelp, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { useQueryState, useQueryStates, parseAsString, parseAsStringLiteral } from "nuqs";
+import { useQueryState, parseAsString, parseAsStringLiteral } from "nuqs";
 import { useDebounce } from "@/hooks/use-debounce";
 import { CardGrid } from "@/components/card-grid";
 import { FilterSheet } from "@/components/filter-sheet";
 import { SortMenu } from "@/components/sort-menu";
-import { ElementIcon } from "@/components/icons";
-import { tokenize, matchesTokens, SEARCH_HELP } from "@/lib/search";
+import {
+  tokenize,
+  matchesTokens,
+  extractFilters,
+  countWithout,
+  SEARCH_HELP,
+} from "@/lib/search";
 import type { BrowserCard, SetInfo, SortKey } from "@/lib/types";
 import { ELEMENTS, RARITY_ORDER, SORT_OPTIONS } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -20,23 +25,6 @@ const SORT_KEYS = SORT_OPTIONS.map((o) => o.value);
 interface CardBrowserProps {
   cards: BrowserCard[];
   sets: SetInfo[];
-}
-
-// ── Helpers ──
-
-function applyUiFilters(
-  cards: BrowserCard[],
-  filters: { type: string; element: string; rarity: string; set: string }
-): BrowserCard[] {
-  let result = cards;
-  if (filters.type) result = result.filter((c) => c.type === filters.type);
-  if (filters.element)
-    result = result.filter((c) => c.elements.includes(filters.element));
-  if (filters.rarity)
-    result = result.filter((c) => c.rarity === filters.rarity);
-  if (filters.set)
-    result = result.filter((c) => c.setSlugs.includes(filters.set));
-  return result;
 }
 
 function sortCards(cards: BrowserCard[], sort: SortKey): BrowserCard[] {
@@ -56,10 +44,8 @@ function sortCards(cards: BrowserCard[], sort: SortKey): BrowserCard[] {
   });
 }
 
-// ── Component ──
-
 export function CardBrowser({ cards, sets }: CardBrowserProps) {
-  // URL state via nuqs (shallow — no server round-trips)
+  // Single URL state for search + all filters
   const [q, setQ] = useQueryState(
     "q",
     parseAsString.withDefault("").withOptions({
@@ -69,16 +55,6 @@ export function CardBrowser({ cards, sets }: CardBrowserProps) {
     })
   );
 
-  const [filterState, setFilterState] = useQueryStates(
-    {
-      type: parseAsString.withDefault(""),
-      element: parseAsString.withDefault(""),
-      rarity: parseAsString.withDefault(""),
-      set: parseAsString.withDefault(""),
-    },
-    { shallow: true, clearOnDefault: true }
-  );
-
   const [sort, setSort] = useQueryState(
     "sort",
     parseAsStringLiteral(SORT_KEYS)
@@ -86,77 +62,99 @@ export function CardBrowser({ cards, sets }: CardBrowserProps) {
       .withOptions({ shallow: true, clearOnDefault: true })
   );
 
-  // Local UI state
   const [visibleCount, setVisibleCount] = useState(BATCH_SIZE);
   const [showHelp, setShowHelp] = useState(false);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
-  // Debounce search for filtering (input stays responsive via nuqs)
-  const debouncedSearch = useDebounce(q, 150);
+  const debouncedQ = useDebounce(q, 150);
 
-  // Derive filter options
-  const types = useMemo(
+  // Derive unique filter options from data
+  const allTypes = useMemo(
     () => [...new Set(cards.map((c) => c.type))].sort(),
     [cards]
   );
-  const rarities = useMemo(() => {
+  const allRarities = useMemo(() => {
     const present = new Set(cards.map((c) => c.rarity).filter(Boolean));
     return RARITY_ORDER.filter((r) => present.has(r)) as string[];
+  }, [cards]);
+  const allSubtypes = useMemo(() => {
+    const counts = new Map<string, number>();
+    cards.forEach((c) =>
+      c.subTypes.forEach((s) => counts.set(s, (counts.get(s) ?? 0) + 1))
+    );
+    return [...counts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([name]) => name);
+  }, [cards]);
+  const allKeywords = useMemo(() => {
+    const counts = new Map<string, number>();
+    cards.forEach((c) =>
+      c.keywords.forEach((k) => counts.set(k, (counts.get(k) ?? 0) + 1))
+    );
+    return [...counts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([name]) => name);
   }, [cards]);
 
   // ── Search + Filter pipeline ──
 
-  const searchTokens = useMemo(
-    () => tokenize(debouncedSearch),
-    [debouncedSearch]
-  );
+  const tokens = useMemo(() => tokenize(debouncedQ), [debouncedQ]);
+  const activeFilters = useMemo(() => extractFilters(tokens), [tokens]);
 
-  const searchMatched = useMemo(
-    () =>
-      searchTokens.length === 0
+  const filtered = useMemo(() => {
+    const matched =
+      tokens.length === 0
         ? cards
-        : cards.filter((c) => matchesTokens(c, searchTokens)),
-    [cards, searchTokens]
-  );
-
-  const filtered = useMemo(
-    () => sortCards(applyUiFilters(searchMatched, filterState), sort),
-    [searchMatched, filterState, sort]
-  );
+        : cards.filter((c) => matchesTokens(c, tokens));
+    return sortCards(matched, sort);
+  }, [cards, tokens, sort]);
 
   // ── Faceted counts ──
 
   const facetCounts = useMemo(() => {
-    const base = searchMatched;
-    const withoutType = applyUiFilters(base, { ...filterState, type: "" });
-    const withoutElement = applyUiFilters(base, { ...filterState, element: "" });
-    const withoutRarity = applyUiFilters(base, { ...filterState, rarity: "" });
-    const withoutSet = applyUiFilters(base, { ...filterState, set: "" });
+    const woElement = countWithout(cards, tokens, "element");
+    const woType = countWithout(cards, tokens, "type");
+    const woRarity = countWithout(cards, tokens, "rarity");
+    const woSet = countWithout(cards, tokens, "set");
+    const woSubtype = countWithout(cards, tokens, "subtype");
+    const woKeyword = countWithout(cards, tokens, "keyword");
 
     return {
-      types: Object.fromEntries(
-        types.map((t) => [t, withoutType.filter((c) => c.type === t).length])
-      ),
       elements: Object.fromEntries(
         ELEMENTS.map((e) => [
           e,
-          withoutElement.filter((c) => c.elements.includes(e)).length,
+          woElement.filter((c) => c.elements.includes(e)).length,
         ])
       ),
+      types: Object.fromEntries(
+        allTypes.map((t) => [t, woType.filter((c) => c.type === t).length])
+      ),
       rarities: Object.fromEntries(
-        rarities.map((r) => [
+        allRarities.map((r) => [
           r,
-          withoutRarity.filter((c) => c.rarity === r).length,
+          woRarity.filter((c) => c.rarity === r).length,
         ])
       ),
       sets: Object.fromEntries(
         sets.map((s) => [
           s.slug,
-          withoutSet.filter((c) => c.setSlugs.includes(s.slug)).length,
+          woSet.filter((c) => c.setSlugs.includes(s.slug)).length,
+        ])
+      ),
+      subtypes: Object.fromEntries(
+        allSubtypes.map((s) => [
+          s,
+          woSubtype.filter((c) => c.subTypes.includes(s)).length,
+        ])
+      ),
+      keywords: Object.fromEntries(
+        allKeywords.map((k) => [
+          k,
+          woKeyword.filter((c) => c.keywords.includes(k)).length,
         ])
       ),
     };
-  }, [searchMatched, filterState, types, rarities, sets]);
+  }, [cards, tokens, allTypes, allRarities, allSubtypes, allKeywords, sets]);
 
   // ── Infinite scroll ──
 
@@ -166,12 +164,11 @@ export function CardBrowser({ cards, sets }: CardBrowserProps) {
   useEffect(() => {
     setVisibleCount(BATCH_SIZE);
     window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
-  }, [debouncedSearch, filterState, sort]);
+  }, [debouncedQ, sort]);
 
   useEffect(() => {
     const el = sentinelRef.current;
     if (!el || !hasMore) return;
-
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
@@ -182,64 +179,23 @@ export function CardBrowser({ cards, sets }: CardBrowserProps) {
       },
       { rootMargin: "400px" }
     );
-
     observer.observe(el);
     return () => observer.disconnect();
   }, [hasMore, filtered.length]);
 
-  // ── Filter handlers ──
+  // ── Query modification handler (passed to Sheet) ──
 
-  const toggleFilter = useCallback(
-    (key: keyof typeof filterState, value: string) => {
-      setFilterState((prev) => ({
-        [key]: prev[key] === value ? null : value,
-      }));
+  const updateQuery = useCallback(
+    (newQ: string) => {
+      setQ(newQ || null);
     },
-    [setFilterState]
+    [setQ]
   );
 
-  const clearFilters = useCallback(() => {
-    setFilterState({ type: null, element: null, rarity: null, set: null });
-  }, [setFilterState]);
-
-  const removeFilter = useCallback(
-    (key: keyof typeof filterState) => {
-      setFilterState({ [key]: null });
-    },
-    [setFilterState]
-  );
-
-  const activeFilterCount = Object.values(filterState).filter(Boolean).length;
-
-  // Active chip list
-  const activeChips: {
-    key: keyof typeof filterState;
-    label: string;
-    value: string;
-  }[] = [];
-  if (filterState.element)
-    activeChips.push({
-      key: "element",
-      label: filterState.element,
-      value: filterState.element,
-    });
-  if (filterState.type)
-    activeChips.push({
-      key: "type",
-      label: filterState.type,
-      value: filterState.type,
-    });
-  if (filterState.rarity)
-    activeChips.push({
-      key: "rarity",
-      label: filterState.rarity,
-      value: filterState.rarity,
-    });
-  if (filterState.set) {
-    const setName =
-      sets.find((s) => s.slug === filterState.set)?.name || filterState.set;
-    activeChips.push({ key: "set", label: setName, value: filterState.set });
-  }
+  // Active filter count for Sheet badge
+  const activeFieldCount = useMemo(() => {
+    return tokens.filter((t) => t.kind === "field" && !t.negated).length;
+  }, [tokens]);
 
   return (
     <div className="flex flex-col gap-3">
@@ -249,7 +205,7 @@ export function CardBrowser({ cards, sets }: CardBrowserProps) {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
           <Input
             type="search"
-            placeholder='Search cards... (try type:minion e:fire c:>3)'
+            placeholder='Search cards... (try t:minion e:fire c:>3)'
             value={q}
             onChange={(e) => setQ(e.target.value || null)}
             className="pl-9 pr-16 h-9"
@@ -275,13 +231,15 @@ export function CardBrowser({ cards, sets }: CardBrowserProps) {
         </div>
 
         <FilterSheet
-          types={types}
-          rarities={rarities}
+          query={q}
+          onQueryChange={updateQuery}
+          activeFilters={activeFilters}
+          activeCount={activeFieldCount}
+          types={allTypes}
+          rarities={allRarities}
           sets={sets}
-          filters={filterState}
-          onToggle={toggleFilter}
-          onClear={clearFilters}
-          activeCount={activeFilterCount}
+          subtypes={allSubtypes}
+          keywords={allKeywords}
           facetCounts={facetCounts}
         />
 
@@ -301,33 +259,6 @@ export function CardBrowser({ cards, sets }: CardBrowserProps) {
               </div>
             ))}
           </div>
-        </div>
-      )}
-
-      {/* Active filter chips */}
-      {activeChips.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 items-center">
-          {activeChips.map((chip) => (
-            <button
-              key={chip.key}
-              onClick={() => removeFilter(chip.key)}
-              className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-muted text-xs text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors"
-            >
-              {chip.key === "element" && (
-                <ElementIcon element={chip.value} size="xs" />
-              )}
-              {chip.label}
-              <X className="h-3 w-3" />
-            </button>
-          ))}
-          {activeChips.length > 1 && (
-            <button
-              onClick={clearFilters}
-              className="text-xs text-muted-foreground hover:text-foreground underline ml-1"
-            >
-              Clear all
-            </button>
-          )}
         </div>
       )}
 

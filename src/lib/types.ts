@@ -13,6 +13,10 @@ export interface BrowserCard {
   rulesText: string | null;
   keywords: string[];
   subTypes: string[];
+  thresholdAir: number;
+  thresholdEarth: number;
+  thresholdFire: number;
+  thresholdWater: number;
   variantSlug: string | null;
   blurDataUrl: string | null;
   setSlugs: string[];
@@ -22,13 +26,6 @@ export interface SetInfo {
   name: string;
   slug: string;
   cardCount: number;
-}
-
-export interface Filters {
-  type: string;
-  element: string;
-  rarity: string;
-  set: string;
 }
 
 export type SortKey =
