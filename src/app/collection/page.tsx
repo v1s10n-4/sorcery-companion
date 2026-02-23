@@ -166,6 +166,7 @@ async function CollectionContent() {
         selectable
         userDecks={userDecks}
         searchPlaceholder="Search collection..."
+        context="collection"
       />
       <div className="mt-6">
         <SharingSettings

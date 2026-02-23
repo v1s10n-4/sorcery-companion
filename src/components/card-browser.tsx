@@ -8,10 +8,9 @@ import {
   X,
   CircleHelp,
   Loader2,
-  TrendingUp,
-  TrendingDown,
   Eye,
   EyeOff,
+  MousePointerClick,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -36,7 +35,6 @@ import type { BrowserCard, SetInfo, SortKey } from "@/lib/types";
 import { ELEMENTS, RARITY_ORDER, SORT_OPTIONS } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-// Dynamically import the selection action bar (only for authenticated users)
 const SelectionActionBar = dynamic(
   () => import("@/components/selection-action-bar").then((m) => m.SelectionActionBar),
   { ssr: false }
@@ -44,8 +42,7 @@ const SelectionActionBar = dynamic(
 
 const BATCH_SIZE = 42;
 const SORT_KEYS = SORT_OPTIONS.map((o) => o.value);
-
-// ── Overlay data for collection/deck badges ──
+const LONG_PRESS_MS = 400;
 
 export interface CardOverlayEntry {
   cardId: string;
@@ -54,25 +51,23 @@ export interface CardOverlayEntry {
   purchasePrice: number | null;
 }
 
+export type BrowserContext = "browse" | "collection" | "deck";
+
 export interface CardBrowserProps {
   cards: BrowserCard[];
   sets: SetInfo[];
-  /** Optional header (e.g. collection stats) rendered above search bar */
   header?: React.ReactNode;
-  /** Collection/deck overlay data to show badges on cards */
   overlay?: CardOverlayEntry[];
-  /** Show owned/all toggle when overlay is provided */
   showOwnedToggle?: boolean;
-  /** Default to showing only overlaid cards */
   defaultOwnedOnly?: boolean;
-  /** Enable card selection mode (requires auth) */
   selectable?: boolean;
-  /** User's deck list for the action bar */
   userDecks?: { id: string; name: string }[];
-  /** Extra toolbar buttons */
   toolbarSlot?: React.ReactNode;
-  /** Search placeholder */
   searchPlaceholder?: string;
+  /** Context determines which actions the selection bar shows */
+  context?: BrowserContext;
+  /** Current deck ID if in deck context */
+  deckId?: string;
 }
 
 function sortCards(cards: BrowserCard[], sort: SortKey): BrowserCard[] {
@@ -103,27 +98,18 @@ export function CardBrowser({
   userDecks,
   toolbarSlot,
   searchPlaceholder = 'Search cards... (try t:minion e:fire c:>3)',
+  context = "browse",
+  deckId,
 }: CardBrowserProps) {
-  const [q, setQ] = useQueryState(
-    "q",
-    parseAsString.withDefault("").withOptions({
-      shallow: true,
-      throttleMs: 150,
-      clearOnDefault: true,
-    })
-  );
-
-  const [sort, setSort] = useQueryState(
-    "sort",
-    parseAsStringLiteral(SORT_KEYS)
-      .withDefault("name")
-      .withOptions({ shallow: true, clearOnDefault: true })
-  );
+  const [q, setQ] = useQueryState("q", parseAsString.withDefault("").withOptions({ shallow: true, throttleMs: 150, clearOnDefault: true }));
+  const [sort, setSort] = useQueryState("sort", parseAsStringLiteral(SORT_KEYS).withDefault("name").withOptions({ shallow: true, clearOnDefault: true }));
 
   const [visibleCount, setVisibleCount] = useState(BATCH_SIZE);
   const [showHelp, setShowHelp] = useState(false);
   const [showOwnedOnly, setShowOwnedOnly] = useState(defaultOwnedOnly && !!overlay);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // Selection: Map<cardId, quantity>
+  const [selection, setSelection] = useState<Map<string, number>>(new Map());
+  const [selectMode, setSelectMode] = useState(false);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   const debouncedQ = useDebounce(q, 150);
@@ -139,47 +125,28 @@ export function CardBrowser({
         existing.market += (e.marketPrice ?? 0) * e.quantity;
         existing.cost += (e.purchasePrice ?? 0) * e.quantity;
       } else {
-        map.set(e.cardId, {
-          qty: e.quantity,
-          market: (e.marketPrice ?? 0) * e.quantity,
-          cost: (e.purchasePrice ?? 0) * e.quantity,
-        });
+        map.set(e.cardId, { qty: e.quantity, market: (e.marketPrice ?? 0) * e.quantity, cost: (e.purchasePrice ?? 0) * e.quantity });
       }
     }
     return map;
   }, [overlay]);
 
-  const ownedCardIds = useMemo(
-    () => (overlayMap ? new Set(overlayMap.keys()) : null),
-    [overlayMap]
-  );
+  const ownedCardIds = useMemo(() => (overlayMap ? new Set(overlayMap.keys()) : null), [overlayMap]);
 
-  // Filter options
-  const allTypes = useMemo(
-    () => [...new Set(cards.map((c) => c.type))].sort(),
-    [cards]
-  );
+  const allTypes = useMemo(() => [...new Set(cards.map((c) => c.type))].sort(), [cards]);
   const allRarities = useMemo(() => {
     const present = new Set(cards.map((c) => c.rarity).filter(Boolean));
     return RARITY_ORDER.filter((r) => present.has(r)) as string[];
   }, [cards]);
   const allSubtypes = useMemo(() => {
     const counts = new Map<string, number>();
-    cards.forEach((c) =>
-      c.subTypes.forEach((s) => counts.set(s, (counts.get(s) ?? 0) + 1))
-    );
-    return [...counts.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .map(([name]) => name);
+    cards.forEach((c) => c.subTypes.forEach((s) => counts.set(s, (counts.get(s) ?? 0) + 1)));
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([name]) => name);
   }, [cards]);
   const allKeywords = useMemo(() => {
     const counts = new Map<string, number>();
-    cards.forEach((c) =>
-      c.keywords.forEach((k) => counts.set(k, (counts.get(k) ?? 0) + 1))
-    );
-    return [...counts.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .map(([name]) => name);
+    cards.forEach((c) => c.keywords.forEach((k) => counts.set(k, (counts.get(k) ?? 0) + 1)));
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([name]) => name);
   }, [cards]);
 
   const tokens = useMemo(() => tokenize(debouncedQ), [debouncedQ]);
@@ -187,78 +154,43 @@ export function CardBrowser({
 
   const filtered = useMemo(() => {
     let result = tokens.length === 0 ? cards : cards.filter((c) => matchesTokens(c, tokens));
-    if (showOwnedOnly && ownedCardIds) {
-      result = result.filter((c) => ownedCardIds.has(c.id));
-    }
+    if (showOwnedOnly && ownedCardIds) result = result.filter((c) => ownedCardIds.has(c.id));
     return sortCards(result, sort);
   }, [cards, tokens, sort, showOwnedOnly, ownedCardIds]);
 
   const facetCounts = useMemo(() => {
-    const base = showOwnedOnly && ownedCardIds
-      ? cards.filter((c) => ownedCardIds.has(c.id))
-      : cards;
+    const base = showOwnedOnly && ownedCardIds ? cards.filter((c) => ownedCardIds.has(c.id)) : cards;
     const woElement = countWithout(base, tokens, "element");
     const woType = countWithout(base, tokens, "type");
     const woRarity = countWithout(base, tokens, "rarity");
     const woSet = countWithout(base, tokens, "set");
     const woSubtype = countWithout(base, tokens, "subtype");
     const woKeyword = countWithout(base, tokens, "keyword");
-
     return {
-      elements: Object.fromEntries(
-        ELEMENTS.map((e) => [e, woElement.filter((c) => c.elements.includes(e)).length])
-      ),
-      types: Object.fromEntries(
-        allTypes.map((t) => [t, woType.filter((c) => c.type === t).length])
-      ),
-      rarities: Object.fromEntries(
-        allRarities.map((r) => [r, woRarity.filter((c) => c.rarity === r).length])
-      ),
-      sets: Object.fromEntries(
-        sets.map((s) => [s.slug, woSet.filter((c) => c.setSlugs.includes(s.slug)).length])
-      ),
-      subtypes: Object.fromEntries(
-        allSubtypes.map((s) => [s, woSubtype.filter((c) => c.subTypes.includes(s)).length])
-      ),
-      keywords: Object.fromEntries(
-        allKeywords.map((k) => [k, woKeyword.filter((c) => c.keywords.includes(k)).length])
-      ),
+      elements: Object.fromEntries(ELEMENTS.map((e) => [e, woElement.filter((c) => c.elements.includes(e)).length])),
+      types: Object.fromEntries(allTypes.map((t) => [t, woType.filter((c) => c.type === t).length])),
+      rarities: Object.fromEntries(allRarities.map((r) => [r, woRarity.filter((c) => c.rarity === r).length])),
+      sets: Object.fromEntries(sets.map((s) => [s.slug, woSet.filter((c) => c.setSlugs.includes(s.slug)).length])),
+      subtypes: Object.fromEntries(allSubtypes.map((s) => [s, woSubtype.filter((c) => c.subTypes.includes(s)).length])),
+      keywords: Object.fromEntries(allKeywords.map((k) => [k, woKeyword.filter((c) => c.keywords.includes(k)).length])),
     };
   }, [cards, tokens, allTypes, allRarities, allSubtypes, allKeywords, sets, showOwnedOnly, ownedCardIds]);
 
   const visibleCards = filtered.slice(0, visibleCount);
   const hasMore = visibleCount < filtered.length;
 
-  useEffect(() => {
-    setVisibleCount(BATCH_SIZE);
-    window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
-  }, [debouncedQ, sort]);
+  useEffect(() => { setVisibleCount(BATCH_SIZE); window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior }); }, [debouncedQ, sort]);
 
   useEffect(() => {
     const el = sentinelRef.current;
     if (!el || !hasMore) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setVisibleCount((prev) => Math.min(prev + BATCH_SIZE, filtered.length));
-        }
-      },
-      { rootMargin: "400px" }
-    );
+    const observer = new IntersectionObserver(([entry]) => { if (entry.isIntersecting) setVisibleCount((prev) => Math.min(prev + BATCH_SIZE, filtered.length)); }, { rootMargin: "400px" });
     observer.observe(el);
     return () => observer.disconnect();
   }, [hasMore, filtered.length]);
 
-  const updateQuery = useCallback(
-    (newQ: string) => { setQ(newQ || null); },
-    [setQ]
-  );
-
-  const activeFieldCount = useMemo(
-    () => tokens.filter((t) => t.kind === "field").length,
-    [tokens]
-  );
-
+  const updateQuery = useCallback((newQ: string) => { setQ(newQ || null); }, [setQ]);
+  const activeFieldCount = useMemo(() => tokens.filter((t) => t.kind === "field").length, [tokens]);
   const statRanges = useMemo(() => {
     let costMax = 0, atkMax = 0, defMax = 0;
     for (const c of cards) {
@@ -266,28 +198,72 @@ export function CardBrowser({
       if (c.attack != null && c.attack > atkMax) atkMax = c.attack;
       if (c.defence != null && c.defence > defMax) defMax = c.defence;
     }
-    return {
-      cost: { min: 0, max: costMax },
-      attack: { min: 0, max: atkMax },
-      defence: { min: 0, max: defMax },
-    };
+    return { cost: { min: 0, max: costMax }, attack: { min: 0, max: atkMax }, defence: { min: 0, max: defMax } };
   }, [cards]);
 
   // Selection handlers
-  const toggleSelect = useCallback((cardId: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(cardId)) next.delete(cardId);
-      else next.add(cardId);
+  const addToSelection = useCallback((cardId: string) => {
+    setSelection((prev) => {
+      const next = new Map(prev);
+      next.set(cardId, (next.get(cardId) ?? 0) + 1);
       return next;
     });
   }, []);
 
-  const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
+  const removeFromSelection = useCallback((cardId: string) => {
+    setSelection((prev) => {
+      const next = new Map(prev);
+      const current = next.get(cardId) ?? 0;
+      if (current <= 1) next.delete(cardId);
+      else next.set(cardId, current - 1);
+      if (next.size === 0) setSelectMode(false);
+      return next;
+    });
+  }, []);
+
+  const clearSelection = useCallback(() => {
+    setSelection(new Map());
+    setSelectMode(false);
+  }, []);
+
+  const toggleSelectMode = useCallback(() => {
+    if (selectMode) clearSelection();
+    else setSelectMode(true);
+  }, [selectMode, clearSelection]);
+
+  const totalSelected = useMemo(() => {
+    let sum = 0;
+    for (const qty of selection.values()) sum += qty;
+    return sum;
+  }, [selection]);
+
+  // Long press handler ref
+  const longPressTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const longPressTriggered = useRef(false);
+
+  const handlePointerDown = useCallback((cardId: string) => {
+    longPressTriggered.current = false;
+    longPressTimer.current = setTimeout(() => {
+      longPressTriggered.current = true;
+      if (!selectMode) setSelectMode(true);
+      setSelection((prev) => {
+        const next = new Map(prev);
+        if (!next.has(cardId)) next.set(cardId, 1);
+        return next;
+      });
+    }, LONG_PRESS_MS);
+  }, [selectMode]);
+
+  const handlePointerUp = useCallback(() => {
+    clearTimeout(longPressTimer.current);
+  }, []);
+
+  const handlePointerCancel = useCallback(() => {
+    clearTimeout(longPressTimer.current);
+  }, []);
 
   return (
     <div className="flex flex-col gap-3">
-      {/* Optional header */}
       {header}
 
       {/* Search + Filter + Sort */}
@@ -309,19 +285,33 @@ export function CardBrowser({
             )}
             <button
               onClick={() => setShowHelp((v) => !v)}
-              className={cn(
-                "p-0.5 rounded transition-colors",
-                showHelp
-                  ? "text-amber-400"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
+              className={cn("p-0.5 rounded transition-colors", showHelp ? "text-amber-400" : "text-muted-foreground hover:text-foreground")}
             >
               <CircleHelp className="h-4 w-4" />
             </button>
           </div>
         </div>
 
-        {/* Owned toggle */}
+        {/* Select mode toggle */}
+        {selectable && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className={cn("gap-1.5", selectMode && "border-amber-500/50 text-amber-200 bg-amber-950/20")}
+                onClick={toggleSelectMode}
+              >
+                <MousePointerClick className="h-4 w-4" />
+                <span className="hidden sm:inline">Select</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {selectMode ? "Exit selection mode" : "Enter selection mode (or long-press a card)"}
+            </TooltipContent>
+          </Tooltip>
+        )}
+
         {showOwnedToggle && overlayMap && (
           <Tooltip>
             <TooltipTrigger asChild>
@@ -336,7 +326,7 @@ export function CardBrowser({
               </Button>
             </TooltipTrigger>
             <TooltipContent>
-              {showOwnedOnly ? "Showing owned cards only — click to show all" : "Showing all cards — click to filter to owned"}
+              {showOwnedOnly ? "Showing owned only" : "Showing all cards"}
             </TooltipContent>
           </Tooltip>
         )}
@@ -360,15 +350,12 @@ export function CardBrowser({
         <SortMenu sort={sort} onSort={setSort} />
       </div>
 
-      {/* Search syntax help */}
       {showHelp && (
         <div className="rounded-lg border border-border bg-card p-3 text-xs">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
             {SEARCH_HELP.map((h) => (
               <div key={h.syntax} className="flex gap-2">
-                <code className="text-amber-300 whitespace-nowrap font-mono">
-                  {h.syntax}
-                </code>
+                <code className="text-amber-300 whitespace-nowrap font-mono">{h.syntax}</code>
                 <span className="text-muted-foreground">{h.desc}</span>
               </div>
             ))}
@@ -376,14 +363,11 @@ export function CardBrowser({
         </div>
       )}
 
-      {/* Result count */}
       <p className="text-xs text-muted-foreground">
         {filtered.length} card{filtered.length !== 1 ? "s" : ""}
         {hasMore && <span> · showing {visibleCount}</span>}
-        {selectedIds.size > 0 && (
-          <span className="text-amber-300 ml-2">
-            · {selectedIds.size} selected
-          </span>
+        {totalSelected > 0 && (
+          <span className="text-amber-300 ml-2">· {selection.size} cards ({totalSelected} total) selected</span>
         )}
       </p>
 
@@ -402,117 +386,155 @@ export function CardBrowser({
         )}>
           {visibleCards.map((card) => {
             const overlayData = overlayMap?.get(card.id);
-            const isSelected = selectedIds.has(card.id);
-            const priceDiff =
-              card.marketPrice != null && card.previousPrice != null && card.previousPrice > 0
-                ? ((card.marketPrice - card.previousPrice) / card.previousPrice) * 100
-                : null;
-
-            // Collection overlay perf
+            const selectedQty = selection.get(card.id) ?? 0;
+            const priceDiff = card.marketPrice != null && card.previousPrice != null && card.previousPrice > 0
+              ? ((card.marketPrice - card.previousPrice) / card.previousPrice) * 100 : null;
             const perfPct = overlayData && overlayData.cost > 0
-              ? ((overlayData.market - overlayData.cost) / overlayData.cost) * 100
-              : null;
+              ? ((overlayData.market - overlayData.cost) / overlayData.cost) * 100 : null;
             const perfAbs = overlayData && overlayData.cost > 0
-              ? overlayData.market - overlayData.cost
-              : null;
+              ? overlayData.market - overlayData.cost : null;
+
+            const handleCardClick = (e: React.MouseEvent) => {
+              if (!selectMode) return; // let Link navigate
+              e.preventDefault();
+              e.stopPropagation();
+
+              // Determine top/bottom half
+              const rect = e.currentTarget.getBoundingClientRect();
+              const y = e.clientY - rect.top;
+              const isTopHalf = y < rect.height / 2;
+
+              if (isTopHalf) {
+                addToSelection(card.id);
+              } else {
+                removeFromSelection(card.id);
+              }
+            };
 
             return (
-              <div key={card.id} className="group relative">
-                {/* Selection checkbox area */}
-                {selectable && (
+              <div
+                key={card.id}
+                className="group relative"
+                onPointerDown={() => selectable && handlePointerDown(card.id)}
+                onPointerUp={handlePointerUp}
+                onPointerCancel={handlePointerCancel}
+                onContextMenu={(e) => { if (selectable) e.preventDefault(); }}
+              >
+                {/* Desktop hover checkbox (only when not in select mode) */}
+                {selectable && !selectMode && (
                   <button
-                    onClick={(e) => { e.preventDefault(); toggleSelect(card.id); }}
-                    className={cn(
-                      "absolute top-1.5 left-1.5 z-10 h-5 w-5 rounded border-2 flex items-center justify-center transition-all cursor-pointer",
-                      isSelected
-                        ? "bg-amber-500 border-amber-500 text-black"
-                        : "border-white/40 bg-black/30 opacity-0 group-hover:opacity-100"
-                    )}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setSelectMode(true);
+                      addToSelection(card.id);
+                    }}
+                    className="absolute top-1.5 left-1.5 z-10 h-5 w-5 rounded border-2 border-white/40 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
                   >
-                    {isSelected && (
-                      <svg className="h-3 w-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M2 6l3 3 5-5" />
-                      </svg>
-                    )}
+                    <svg className="h-3 w-3 text-white" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M6 3v6M3 6h6" />
+                    </svg>
                   </button>
                 )}
 
-                <Link href={`/cards/${card.id}`} prefetch={false}>
-                  <div className={cn(
-                    "relative overflow-hidden rounded-lg bg-muted/30",
-                    isSelected && "ring-2 ring-amber-500"
-                  )}>
-                    {card.variantSlug ? (
-                      <CardImage
-                        slug={card.variantSlug}
-                        name={card.name}
-                        width={260}
-                        height={364}
-                        blurDataUrl={card.blurDataUrl}
-                        className={cn(
-                          "w-full h-auto transition-transform duration-200 group-hover:scale-105",
-                          overlay && !overlayData && "opacity-40"
-                        )}
-                      />
-                    ) : (
-                      <div className="aspect-[5/7] flex items-center justify-center text-xs text-muted-foreground">
-                        No image
-                      </div>
-                    )}
-
-                    {/* Collection overlay badges */}
-                    {overlayData && (
-                      <>
-                        <div className="absolute bottom-1.5 left-1.5 bg-black/75 text-white text-[10px] font-bold px-1.5 py-0.5 rounded min-w-[20px] text-center">
-                          {overlayData.qty}
-                        </div>
-                        {overlayData.market > 0 && (
-                          <div className="absolute bottom-1.5 right-1.5 bg-black/75 text-amber-300 text-[10px] font-bold px-1.5 py-0.5 rounded">
-                            ${overlayData.market.toFixed(2)}
-                          </div>
-                        )}
-                      </>
-                    )}
+                {/* Selection quantity badge */}
+                {selectedQty > 0 && (
+                  <div className="absolute top-1.5 left-1.5 z-10 bg-amber-500 text-black text-[11px] font-bold h-6 min-w-[24px] px-1 rounded flex items-center justify-center">
+                    {selectedQty}
                   </div>
-                </Link>
+                )}
+
+                {/* Card image — in select mode, click is intercepted */}
+                <div
+                  onClick={selectMode ? handleCardClick : undefined}
+                  className={cn(selectMode && "cursor-pointer")}
+                >
+                  {selectMode ? (
+                    <div className={cn(
+                      "relative overflow-hidden rounded-lg bg-muted/30",
+                      selectedQty > 0 && "ring-2 ring-amber-500"
+                    )}>
+                      {card.variantSlug ? (
+                        <CardImage
+                          slug={card.variantSlug}
+                          name={card.name}
+                          width={260}
+                          height={364}
+                          blurDataUrl={card.blurDataUrl}
+                          className={cn("w-full h-auto", overlay && !overlayData && "opacity-40")}
+                        />
+                      ) : (
+                        <div className="aspect-[5/7] flex items-center justify-center text-xs text-muted-foreground">No image</div>
+                      )}
+                      {/* Top/bottom half indicators */}
+                      <div className="absolute inset-0 flex flex-col pointer-events-none">
+                        <div className="flex-1 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                          <span className="bg-green-500/70 text-white text-[10px] font-bold px-2 py-0.5 rounded">+1</span>
+                        </div>
+                        <div className="flex-1 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                          <span className="bg-red-500/70 text-white text-[10px] font-bold px-2 py-0.5 rounded">−1</span>
+                        </div>
+                      </div>
+                      {overlayData && (
+                        <>
+                          <div className="absolute bottom-1.5 left-1.5 bg-black/75 text-white text-[10px] font-bold px-1.5 py-0.5 rounded min-w-[20px] text-center">{overlayData.qty}</div>
+                          {overlayData.market > 0 && (
+                            <div className="absolute bottom-1.5 right-1.5 bg-black/75 text-amber-300 text-[10px] font-bold px-1.5 py-0.5 rounded">${overlayData.market.toFixed(2)}</div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  ) : (
+                    <Link href={`/cards/${card.id}`} prefetch={false}>
+                      <div className={cn("relative overflow-hidden rounded-lg bg-muted/30", selectedQty > 0 && "ring-2 ring-amber-500")}>
+                        {card.variantSlug ? (
+                          <CardImage
+                            slug={card.variantSlug}
+                            name={card.name}
+                            width={260}
+                            height={364}
+                            blurDataUrl={card.blurDataUrl}
+                            className={cn("w-full h-auto transition-transform duration-200 group-hover:scale-105", overlay && !overlayData && "opacity-40")}
+                          />
+                        ) : (
+                          <div className="aspect-[5/7] flex items-center justify-center text-xs text-muted-foreground">No image</div>
+                        )}
+                        {overlayData && (
+                          <>
+                            <div className="absolute bottom-1.5 left-1.5 bg-black/75 text-white text-[10px] font-bold px-1.5 py-0.5 rounded min-w-[20px] text-center">{overlayData.qty}</div>
+                            {overlayData.market > 0 && (
+                              <div className="absolute bottom-1.5 right-1.5 bg-black/75 text-amber-300 text-[10px] font-bold px-1.5 py-0.5 rounded">${overlayData.market.toFixed(2)}</div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </Link>
+                  )}
+                </div>
 
                 {/* Info below image */}
                 <div className="mt-1 px-0.5 flex items-center justify-between gap-1">
                   <p className="text-[11px] truncate text-muted-foreground group-hover:text-foreground transition-colors flex-1 min-w-0">
                     {card.name}
                   </p>
-                  {/* Collection mode: show perf vs purchase price */}
                   {overlay && overlayData && perfPct !== null ? (
-                    <span className={cn(
-                      "text-[10px] font-semibold whitespace-nowrap shrink-0 flex items-center gap-0.5",
-                      perfPct >= 0 ? "text-green-400" : "text-red-400"
-                    )}>
+                    <span className={cn("text-[10px] font-semibold whitespace-nowrap shrink-0 flex items-center gap-0.5", perfPct >= 0 ? "text-green-400" : "text-red-400")}>
                       {perfPct >= 0 ? "+" : ""}{perfAbs!.toFixed(2)}
-                      <span className="text-[9px] opacity-75">
-                        ({perfPct >= 0 ? "+" : ""}{perfPct.toFixed(0)}%)
-                      </span>
+                      <span className="text-[9px] opacity-75">({perfPct >= 0 ? "+" : ""}{perfPct.toFixed(0)}%)</span>
+                    </span>
+                  ) : card.marketPrice != null ? (
+                    <span className="text-[10px] whitespace-nowrap shrink-0 flex items-center gap-1">
+                      <span className="text-amber-300">${card.marketPrice.toFixed(2)}</span>
+                      {priceDiff !== null && priceDiff !== 0 ? (
+                        <span className={cn("font-semibold", priceDiff > 0 ? "text-green-400" : "text-red-400")}>
+                          {priceDiff > 0 ? "+" : ""}{priceDiff.toFixed(1)}%
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground/50">0%</span>
+                      )}
                     </span>
                   ) : (
-                    /* Browse mode: show market price + 24h change */
-                    card.marketPrice != null ? (
-                      <span className="text-[10px] whitespace-nowrap shrink-0 flex items-center gap-1">
-                        <span className="text-amber-300">${card.marketPrice.toFixed(2)}</span>
-                        {priceDiff !== null && priceDiff !== 0 ? (
-                          <span className={cn(
-                            "font-semibold",
-                            priceDiff > 0 ? "text-green-400" : "text-red-400"
-                          )}>
-                            {priceDiff > 0 ? "+" : ""}{priceDiff.toFixed(1)}%
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground/50">0%</span>
-                        )}
-                      </span>
-                    ) : (
-                      <span className="text-[10px] text-muted-foreground/40 whitespace-nowrap shrink-0">
-                        N/A
-                      </span>
-                    )
+                    <span className="text-[10px] text-muted-foreground/40 whitespace-nowrap shrink-0">N/A</span>
                   )}
                 </div>
               </div>
@@ -521,19 +543,20 @@ export function CardBrowser({
         </div>
       )}
 
-      {/* Infinite scroll sentinel */}
       {hasMore && (
         <div ref={sentinelRef} className="flex justify-center py-8">
           <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
         </div>
       )}
 
-      {/* Selection action bar (dynamically loaded) */}
-      {selectable && selectedIds.size > 0 && (
+      {/* Selection action bar */}
+      {selectable && selection.size > 0 && (
         <SelectionActionBar
-          selectedCardIds={selectedIds}
+          selection={selection}
           cards={cards}
           userDecks={userDecks ?? []}
+          context={context}
+          deckId={deckId}
           onClear={clearSelection}
         />
       )}
