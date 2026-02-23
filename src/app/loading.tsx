@@ -1,4 +1,4 @@
-import { CardGridSkeleton } from "@/components/card-grid-skeleton";
+import { CardBrowserSkeleton } from "@/components/skeletons";
 
 export default function Loading() {
   return (
@@ -6,7 +6,7 @@ export default function Loading() {
       <div className="mb-4">
         <div className="h-8 w-64 bg-muted rounded animate-pulse" />
       </div>
-      <CardGridSkeleton />
+      <CardBrowserSkeleton />
     </main>
   );
 }
