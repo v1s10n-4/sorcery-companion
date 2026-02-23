@@ -17,6 +17,11 @@
  *   keyword:airborne  kw:fly — multi-select: kw:airborne,lethal
  *   subtype:dragon  st:beast — multi-select: st:dragon,demon
  *   tf:>=2  tw:1  ta:>=1     — threshold filters
+ *
+ * Filter modes (UI-driven, encoded in query):
+ *   any  → e:fire,water       (comma-separated, OR)
+ *   all  → e:fire e:water     (separate tokens, AND)
+ *   none → -e:fire,water      (negated, exclude)
  */
 
 import type { BrowserCard } from "./types";
@@ -51,6 +56,20 @@ export interface OrToken {
 }
 
 export type Token = TextToken | PhraseToken | FieldToken | OrToken;
+
+// ── Filter modes ──
+
+export type FilterMode = "any" | "all" | "none";
+
+export interface MultiSelectState {
+  values: string[];
+  mode: FilterMode;
+}
+
+export interface ThresholdState {
+  op: NumOp;
+  val: number;
+}
 
 // ── Field aliases ──
 
@@ -96,7 +115,6 @@ const FIELD_ALIAS: Record<string, string> = {
   threshold_air: "threshold_air",
 };
 
-// Short aliases for serialization
 const PREFERRED_ALIAS: Record<string, string> = {
   type: "t",
   element: "e",
@@ -203,7 +221,6 @@ export function tokenize(query: string): Token[] {
           negated,
         };
 
-        // For numeric fields, try parsing the first value (or single value)
         if (NUMERIC_FIELDS.has(field)) {
           const num = parseNumeric(rawValue);
           if (num) {
@@ -292,7 +309,12 @@ function numCompare(
   }
 }
 
-function fieldMatchesSingle(card: BrowserCard, field: string, v: string, token: FieldToken): boolean {
+function fieldMatchesSingle(
+  card: BrowserCard,
+  field: string,
+  v: string,
+  token: FieldToken
+): boolean {
   switch (field) {
     case "type":
       return card.type.toLowerCase() === v;
@@ -308,7 +330,6 @@ function fieldMatchesSingle(card: BrowserCard, field: string, v: string, token: 
       return (card.keywords ?? []).some((k) => k.toLowerCase().includes(v));
     case "subtype":
       return (card.subTypes ?? []).some((s) => s.toLowerCase().includes(v));
-    // Numeric fields — use numOp/numVal from token
     case "cost":
       return token.numOp != null && token.numVal != null
         ? numCompare(card.cost, token.numOp, token.numVal)
@@ -347,7 +368,6 @@ function fieldMatchesSingle(card: BrowserCard, field: string, v: string, token: 
 }
 
 function fieldMatches(card: BrowserCard, token: FieldToken): boolean {
-  // Multi-select: comma-separated values are OR'd
   if (!NUMERIC_FIELDS.has(token.field) && token.value.includes(",")) {
     const values = token.value.split(",").map((v) => v.trim().toLowerCase());
     return values.some((v) => fieldMatchesSingle(card, token.field, v, token));
@@ -400,19 +420,19 @@ export interface NumericRange {
 }
 
 export interface ActiveFilters {
-  elements: string[];
-  types: string[];
-  rarities: string[];
-  sets: string[];
-  subtypes: string[];
-  keywords: string[];
+  elements: MultiSelectState;
+  types: MultiSelectState;
+  rarities: MultiSelectState;
+  sets: MultiSelectState;
+  subtypes: MultiSelectState;
+  keywords: MultiSelectState;
   cost: NumericRange | null;
   attack: NumericRange | null;
   defence: NumericRange | null;
-  thresholdFire: number | null;
-  thresholdWater: number | null;
-  thresholdEarth: number | null;
-  thresholdAir: number | null;
+  thresholdFire: ThresholdState | null;
+  thresholdWater: ThresholdState | null;
+  thresholdEarth: ThresholdState | null;
+  thresholdAir: ThresholdState | null;
 }
 
 function mergeNumRange(
@@ -435,14 +455,38 @@ function mergeNumRange(
   }
 }
 
+// ── Mode detection helpers ──
+
+function getFieldValues(tokens: Token[], field: string): string[] {
+  const values: string[] = [];
+  for (const t of tokens) {
+    if (t.kind !== "field" || t.field !== field) continue;
+    if (!NUMERIC_FIELDS.has(field)) {
+      values.push(...t.value.split(",").map((v) => v.trim().toLowerCase()));
+    }
+  }
+  return [...new Set(values)];
+}
+
+function detectFieldMode(tokens: Token[], field: string): FilterMode {
+  const fieldTokens = tokens.filter(
+    (t) => t.kind === "field" && t.field === field
+  ) as FieldToken[];
+
+  if (fieldTokens.length === 0) return "any";
+  if (fieldTokens.some((t) => t.negated)) return "none";
+  if (fieldTokens.filter((t) => !t.negated).length > 1) return "all";
+  return "any";
+}
+
 export function extractFilters(tokens: Token[]): ActiveFilters {
   const f: ActiveFilters = {
-    elements: [],
-    types: [],
-    rarities: [],
-    sets: [],
-    subtypes: [],
-    keywords: [],
+    elements: { values: [], mode: "any" },
+    types: { values: [], mode: "any" },
+    rarities: { values: [], mode: "any" },
+    sets: { values: [], mode: "any" },
+    subtypes: { values: [], mode: "any" },
+    keywords: { values: [], mode: "any" },
     cost: null,
     attack: null,
     defence: null,
@@ -452,29 +496,26 @@ export function extractFilters(tokens: Token[]): ActiveFilters {
     thresholdAir: null,
   };
 
+  const fieldToKey: Record<string, keyof ActiveFilters> = {
+    element: "elements",
+    type: "types",
+    rarity: "rarities",
+    set: "sets",
+    subtype: "subtypes",
+    keyword: "keywords",
+  };
+
+  for (const [field, key] of Object.entries(fieldToKey)) {
+    (f[key] as MultiSelectState) = {
+      values: getFieldValues(tokens, field),
+      mode: detectFieldMode(tokens, field),
+    };
+  }
+
   for (const t of tokens) {
     if (t.kind !== "field" || t.negated) continue;
-    const vals = t.value.split(",").map((v) => v.trim().toLowerCase());
 
     switch (t.field) {
-      case "element":
-        f.elements.push(...vals);
-        break;
-      case "type":
-        f.types.push(...vals);
-        break;
-      case "rarity":
-        f.rarities.push(...vals);
-        break;
-      case "set":
-        f.sets.push(...vals);
-        break;
-      case "subtype":
-        f.subtypes.push(...vals);
-        break;
-      case "keyword":
-        f.keywords.push(...vals);
-        break;
       case "cost":
         if (t.numOp != null && t.numVal != null)
           f.cost = mergeNumRange(f.cost, t.numOp, t.numVal);
@@ -488,16 +529,20 @@ export function extractFilters(tokens: Token[]): ActiveFilters {
           f.defence = mergeNumRange(f.defence, t.numOp, t.numVal);
         break;
       case "threshold_fire":
-        if (t.numVal != null) f.thresholdFire = t.numVal;
+        if (t.numVal != null)
+          f.thresholdFire = { op: t.numOp ?? "gte", val: t.numVal };
         break;
       case "threshold_water":
-        if (t.numVal != null) f.thresholdWater = t.numVal;
+        if (t.numVal != null)
+          f.thresholdWater = { op: t.numOp ?? "gte", val: t.numVal };
         break;
       case "threshold_earth":
-        if (t.numVal != null) f.thresholdEarth = t.numVal;
+        if (t.numVal != null)
+          f.thresholdEarth = { op: t.numOp ?? "gte", val: t.numVal };
         break;
       case "threshold_air":
-        if (t.numVal != null) f.thresholdAir = t.numVal;
+        if (t.numVal != null)
+          f.thresholdAir = { op: t.numOp ?? "gte", val: t.numVal };
         break;
     }
   }
@@ -507,46 +552,98 @@ export function extractFilters(tokens: Token[]): ActiveFilters {
 
 // ── Query manipulation ──
 
-/** Toggle a value in a multi-select field (add or remove) */
+/** Toggle a value in a multi-select field, respecting the mode */
 export function toggleFieldValue(
   query: string,
   field: string,
-  value: string
+  value: string,
+  mode: FilterMode = "any"
 ): string {
   const tokens = tokenize(query);
   const lv = value.toLowerCase();
+  const currentValues = getFieldValues(tokens, field);
 
-  // Find existing non-negated field token
-  const idx = tokens.findIndex(
-    (t) => t.kind === "field" && t.field === field && !t.negated
-  );
-
-  if (idx !== -1) {
-    const token = tokens[idx] as FieldToken;
-    const values = token.value.split(",").map((v) => v.trim());
-    const vi = values.findIndex((v) => v.toLowerCase() === lv);
-
-    if (vi !== -1) {
-      values.splice(vi, 1);
-      if (values.length === 0) {
-        tokens.splice(idx, 1);
-      } else {
-        token.value = values.join(",");
-      }
-    } else {
-      values.push(lv);
-      token.value = values.join(",");
-    }
+  let newValues: string[];
+  if (currentValues.includes(lv)) {
+    newValues = currentValues.filter((v) => v !== lv);
   } else {
-    tokens.push({
-      kind: "field",
-      field,
-      value: lv,
-      negated: false,
-    });
+    newValues = [...currentValues, lv];
   }
 
-  return serializeTokens(tokens);
+  // Remove all existing tokens for this field
+  const remaining = tokens.filter(
+    (t) => !(t.kind === "field" && t.field === field)
+  );
+
+  if (newValues.length === 0) return serializeTokens(remaining);
+
+  switch (mode) {
+    case "any":
+      remaining.push({
+        kind: "field",
+        field,
+        value: newValues.join(","),
+        negated: false,
+      });
+      break;
+    case "all":
+      for (const v of newValues) {
+        remaining.push({ kind: "field", field, value: v, negated: false });
+      }
+      break;
+    case "none":
+      remaining.push({
+        kind: "field",
+        field,
+        value: newValues.join(","),
+        negated: true,
+      });
+      break;
+  }
+
+  return serializeTokens(remaining);
+}
+
+/** Change the filter mode for a field (restructures tokens) */
+export function setFieldMode(
+  query: string,
+  field: string,
+  newMode: FilterMode
+): string {
+  const tokens = tokenize(query);
+  const values = getFieldValues(tokens, field);
+
+  if (values.length === 0) return query;
+
+  const remaining = tokens.filter(
+    (t) => !(t.kind === "field" && t.field === field)
+  );
+
+  switch (newMode) {
+    case "any":
+      remaining.push({
+        kind: "field",
+        field,
+        value: values.join(","),
+        negated: false,
+      });
+      break;
+    case "all":
+      for (const v of values) {
+        remaining.push({ kind: "field", field, value: v, negated: false });
+      }
+      break;
+    case "none":
+      remaining.push({
+        kind: "field",
+        field,
+        value: values.join(","),
+        negated: true,
+      });
+      break;
+  }
+
+  return serializeTokens(remaining);
 }
 
 /** Set a numeric range filter. Pass undefined to clear min/max. */
@@ -556,7 +653,6 @@ export function setFieldRange(
   min?: number,
   max?: number
 ): string {
-  // Remove all non-negated tokens for this field
   const tokens = tokenize(query).filter(
     (t) => !(t.kind === "field" && t.field === field && !t.negated)
   );
@@ -585,7 +681,7 @@ export function setFieldRange(
   return serializeTokens(tokens);
 }
 
-/** Set a single numeric exact/gte value for a field. null to clear. */
+/** Set a single numeric value for a field with a specific operator. null to clear. */
 export function setFieldNumeric(
   query: string,
   field: string,
@@ -598,7 +694,15 @@ export function setFieldNumeric(
 
   if (value != null) {
     const prefix =
-      op === "gte" ? ">=" : op === "lte" ? "<=" : op === "gt" ? ">" : op === "lt" ? "<" : "";
+      op === "gte"
+        ? ">="
+        : op === "lte"
+          ? "<="
+          : op === "gt"
+            ? ">"
+            : op === "lt"
+              ? "<"
+              : "";
     tokens.push({
       kind: "field",
       field,
@@ -626,14 +730,14 @@ export function clearAllFields(query: string): string {
   return serializeTokens(tokens);
 }
 
-/** Compute faceted counts excluding tokens for a specific field */
+/** Compute faceted counts excluding ALL tokens for a specific field */
 export function countWithout(
   cards: BrowserCard[],
   tokens: Token[],
   excludeField: string
 ): BrowserCard[] {
   const remaining = tokens.filter(
-    (t) => !(t.kind === "field" && t.field === excludeField && !t.negated)
+    (t) => !(t.kind === "field" && t.field === excludeField)
   );
   if (remaining.length === 0) return cards;
   return cards.filter((c) => matchesTokens(c, remaining));

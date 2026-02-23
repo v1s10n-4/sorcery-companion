@@ -192,10 +192,25 @@ export function CardBrowser({ cards, sets }: CardBrowserProps) {
     [setQ]
   );
 
-  // Active filter count for Sheet badge
+  // Active filter count for Sheet badge (includes negated)
   const activeFieldCount = useMemo(() => {
-    return tokens.filter((t) => t.kind === "field" && !t.negated).length;
+    return tokens.filter((t) => t.kind === "field").length;
   }, [tokens]);
+
+  // Stat ranges for sliders
+  const statRanges = useMemo(() => {
+    let costMax = 0, atkMax = 0, defMax = 0;
+    for (const c of cards) {
+      if (c.cost != null && c.cost > costMax) costMax = c.cost;
+      if (c.attack != null && c.attack > atkMax) atkMax = c.attack;
+      if (c.defence != null && c.defence > defMax) defMax = c.defence;
+    }
+    return {
+      cost: { min: 0, max: costMax },
+      attack: { min: 0, max: atkMax },
+      defence: { min: 0, max: defMax },
+    };
+  }, [cards]);
 
   return (
     <div className="flex flex-col gap-3">
@@ -241,6 +256,7 @@ export function CardBrowser({ cards, sets }: CardBrowserProps) {
           subtypes={allSubtypes}
           keywords={allKeywords}
           facetCounts={facetCounts}
+          statRanges={statRanges}
         />
 
         <SortMenu sort={sort} onSort={setSort} />
