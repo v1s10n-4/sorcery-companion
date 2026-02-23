@@ -11,6 +11,7 @@ interface CardImageProps {
   className?: string;
   width?: number;
   height?: number;
+  blurDataUrl?: string | null;
 }
 
 export function CardImage({
@@ -19,6 +20,7 @@ export function CardImage({
   className = "",
   width = 300,
   height = 420,
+  blurDataUrl,
 }: CardImageProps) {
   const [error, setError] = useState(false);
   const src = `${CARD_IMAGE_BASE}/cards/${slug}.png`;
@@ -42,6 +44,9 @@ export function CardImage({
       height={height}
       className={`rounded-lg shadow-lg ${className}`}
       onError={() => setError(true)}
+      {...(blurDataUrl
+        ? { placeholder: "blur", blurDataURL: blurDataUrl }
+        : {})}
     />
   );
 }

@@ -23,7 +23,7 @@ export default async function Home() {
         variants: {
           take: 1,
           orderBy: { createdAt: "asc" },
-          select: { slug: true },
+          select: { slug: true, blurDataUrl: true },
         },
         sets: {
           select: { set: { select: { slug: true } } },
@@ -50,6 +50,7 @@ export default async function Home() {
     elements: c.elements,
     rulesText: c.rulesText,
     variantSlug: c.variants[0]?.slug ?? null,
+    blurDataUrl: c.variants[0]?.blurDataUrl ?? null,
     setSlugs: c.sets.map((cs) => cs.set.slug),
   }));
 

@@ -58,6 +58,7 @@ export default async function CardDetailPage({ params }: PageProps) {
               name={card.name}
               width={300}
               height={420}
+              blurDataUrl={card.variants[0].blurDataUrl}
             />
           )}
 
@@ -70,6 +71,7 @@ export default async function CardDetailPage({ params }: PageProps) {
                   name={card.name}
                   width={70}
                   height={98}
+                  blurDataUrl={v.blurDataUrl}
                   className="rounded-sm opacity-70 hover:opacity-100 transition-opacity cursor-pointer"
                 />
               ))}

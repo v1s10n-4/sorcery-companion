@@ -28,6 +28,7 @@ export function CardGrid({ cards }: { cards: BrowserCard[] }) {
                 name={card.name}
                 width={260}
                 height={364}
+                blurDataUrl={card.blurDataUrl}
                 className="w-full h-auto transition-transform duration-200 group-hover:scale-105"
               />
             ) : (

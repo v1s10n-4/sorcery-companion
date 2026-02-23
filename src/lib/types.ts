@@ -12,6 +12,7 @@ export interface BrowserCard {
   elements: string[];
   rulesText: string | null;
   variantSlug: string | null;
+  blurDataUrl: string | null;
   setSlugs: string[];
 }
 

@@ -34,6 +34,7 @@ export default async function SetDetailPage({
           where: { set: { setId: set.id } },
           take: 1,
           orderBy: { createdAt: "asc" },
+          select: { slug: true, blurDataUrl: true },
         },
       },
       skip: (page - 1) * PAGE_SIZE,
@@ -92,6 +93,7 @@ export default async function SetDetailPage({
                     name={card.name}
                     width={260}
                     height={364}
+                    blurDataUrl={card.variants[0].blurDataUrl}
                     className="w-full h-auto transition-transform duration-200 group-hover:scale-105"
                   />
                 ) : (

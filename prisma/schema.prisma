@@ -86,13 +86,14 @@ model CardSet {
 }
 
 model CardVariant {
-  id         String  @id @default(cuid())
-  slug       String  @unique // e.g. "alp-apprentice_wizard-b-s"
-  finish     String  // Standard, Foil, Rainbow
-  product    String  // Booster, Kickstarter, Box_Topper, etc.
-  artist     String?
-  flavorText String?
-  typeText   String?
+  id          String  @id @default(cuid())
+  slug        String  @unique // e.g. "alp-apprentice_wizard-b-s"
+  finish      String  // Standard, Foil, Rainbow
+  product     String  // Booster, Kickstarter, Box_Topper, etc.
+  artist      String?
+  flavorText  String?
+  typeText    String?
+  blurDataUrl String? // tiny base64 blur placeholder for next/image
 
   card     Card    @relation(fields: [cardId], references: [id], onDelete: Cascade)
   cardId   String
