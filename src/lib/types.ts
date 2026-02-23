@@ -64,6 +64,16 @@ export const RARITY_ACTIVE: Record<string, string> = {
 
 // ── Card detail page types ──
 
+export interface VariantPrice {
+  tcgplayerProductId: number;
+  productUrl: string;
+  printing: string; // "Normal" | "Foil"
+  marketPrice: number | null;
+  lowPrice: number | null;
+  medianPrice: number | null;
+  history: { date: string; price: number }[]; // market price over time
+}
+
 export interface DetailVariant {
   id: string;
   slug: string;
@@ -73,6 +83,7 @@ export interface DetailVariant {
   flavorText: string | null;
   typeText: string | null;
   blurDataUrl: string | null;
+  prices: VariantPrice[];
 }
 
 export interface Printing {

@@ -4,6 +4,7 @@ import { useState, useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { CardImage } from "@/components/card-image";
+import { PriceDisplay } from "@/components/price-display";
 import { ElementBadges, StatIcon, Thresholds } from "@/components/icons";
 import { Paintbrush, Check } from "lucide-react";
 import { RARITY_COLORS } from "@/lib/types";
@@ -92,6 +93,11 @@ export function CardDetailView({ card }: { card: CardDetail }) {
             </p>
           )}
         </div>
+
+        {/* Prices */}
+        {selected.prices.length > 0 && (
+          <PriceDisplay prices={selected.prices} />
+        )}
       </div>
 
       {/* ── Right: Details ── */}

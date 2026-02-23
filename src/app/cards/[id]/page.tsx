@@ -6,7 +6,7 @@ import { ChevronLeft } from "lucide-react";
 import { CardDetailSkeleton } from "@/components/skeletons";
 import { CardDetailView } from "@/components/card-detail-view";
 import { getCard } from "@/lib/data";
-import type { CardDetail, Printing } from "@/lib/types";
+import type { CardDetail, Printing, VariantPrice } from "@/lib/types";
 
 export const revalidate = 3600;
 
@@ -80,6 +80,26 @@ async function CardDetailContent({ id }: { id: string }) {
       flavorText: v.flavorText,
       typeText: v.typeText,
       blurDataUrl: v.blurDataUrl,
+      prices: (v.tcgplayerProducts ?? []).map((tp): VariantPrice => {
+        const latest = tp.priceSnapshots[0];
+        // Deduplicate snapshots by date, keep latest per day
+        const byDate = new Map<string, number>();
+        for (const snap of [...tp.priceSnapshots].reverse()) {
+          if (snap.marketPrice != null) {
+            const date = snap.recordedAt.toISOString().slice(0, 10);
+            byDate.set(date, snap.marketPrice);
+          }
+        }
+        return {
+          tcgplayerProductId: tp.id,
+          productUrl: tp.productUrl,
+          printing: tp.printing,
+          marketPrice: latest?.marketPrice ?? null,
+          lowPrice: latest?.lowPrice ?? null,
+          medianPrice: latest?.medianPrice ?? null,
+          history: Array.from(byDate, ([date, price]) => ({ date, price })),
+        };
+      }),
     })),
   }));
 

@@ -78,7 +78,21 @@ export const getCard = cache(async (id: string) => {
     where: { id },
     include: {
       sets: {
-        include: { set: true, variants: true },
+        include: {
+          set: true,
+          variants: {
+            include: {
+              tcgplayerProducts: {
+                include: {
+                  priceSnapshots: {
+                    orderBy: { recordedAt: "desc" },
+                    take: 90, // ~3 months of 1x/day snapshots
+                  },
+                },
+              },
+            },
+          },
+        },
         orderBy: { set: { releasedAt: "asc" } },
       },
       variants: {

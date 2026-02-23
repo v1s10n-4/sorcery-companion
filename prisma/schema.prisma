@@ -100,10 +100,45 @@ model CardVariant {
   set      CardSet @relation(fields: [setId], references: [id], onDelete: Cascade)
   setId    String
 
-  collectionCards CollectionCard[]
+  collectionCards    CollectionCard[]
+  tcgplayerProducts  TcgplayerProduct[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// ─── Pricing Data ────────────────────────────────────────
+
+model TcgplayerProduct {
+  id             Int              @id // TCGplayer productId
+  cardName       String           // card name on TCGplayer
+  setName        String           // set name on TCGplayer (Alpha, Beta, etc.)
+  printing       String           // "Normal" or "Foil"
+  productUrl     String           // URL-safe name for link construction
+
+  // Link to our data — nullable until matched
+  variant        CardVariant?     @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  variantId      String?
+
+  priceSnapshots PriceSnapshot[]
+
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@index([variantId])
+  @@index([cardName, setName, printing])
+}
+
+model PriceSnapshot {
+  id                   Int              @id @default(autoincrement())
+  tcgplayerProduct     TcgplayerProduct @relation(fields: [tcgplayerProductId], references: [id], onDelete: Cascade)
+  tcgplayerProductId   Int
+  marketPrice          Float?
+  lowPrice             Float?
+  medianPrice          Float?
+  recordedAt           DateTime         @default(now())
+
+  @@index([tcgplayerProductId, recordedAt])
 }
 
 // ─── User Data ───────────────────────────────────────────

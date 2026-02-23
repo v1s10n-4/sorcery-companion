@@ -156,17 +156,9 @@ export function FilterSheet({
           )}
         </Button>
       </SheetTrigger>
-      <SheetContent side="right" className="w-80 sm:w-96 overflow-y-auto">
-        <SheetHeader className="flex flex-row items-center justify-between pb-4">
+      <SheetContent side="right" className="w-80 sm:w-96 overflow-y-auto px-5">
+        <SheetHeader className="pb-4">
           <SheetTitle>Filters</SheetTitle>
-          {activeCount > 0 && (
-            <button
-              onClick={clearAll}
-              className="text-xs text-muted-foreground hover:text-foreground underline"
-            >
-              Clear all
-            </button>
-          )}
         </SheetHeader>
 
         <div className="flex flex-col gap-6">
@@ -386,6 +378,19 @@ export function FilterSheet({
             </div>
           </FilterGroupSimple>
         </div>
+
+        {activeCount > 0 && (
+          <div className="sticky bottom-0 pt-4 pb-2 mt-4 border-t border-border bg-background">
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={clearAll}
+            >
+              Clear all filters
+            </Button>
+          </div>
+        )}
       </SheetContent>
     </Sheet>
   );
