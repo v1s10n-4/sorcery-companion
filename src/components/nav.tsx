@@ -36,6 +36,12 @@ export async function Nav() {
                 >
                   Collection
                 </Link>
+                <Link
+                  href="/decks"
+                  className="text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Decks
+                </Link>
                 <UserMenu
                   name={user.name || "User"}
                   avatarUrl={user.avatarUrl}

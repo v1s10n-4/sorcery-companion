@@ -23,6 +23,7 @@ import {
   Search,
   Download,
   Upload,
+  BarChart3,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { removeFromCollection } from "@/lib/actions/collection";
@@ -144,6 +145,12 @@ export function CollectionView({
           {collectionName}
         </h1>
         <div className="flex items-center gap-2">
+          <Link href="/collection/stats">
+            <Button variant="outline" size="sm" className="gap-1.5">
+              <BarChart3 className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Stats</span>
+            </Button>
+          </Link>
           <Link href="/collection/import">
             <Button variant="outline" size="sm" className="gap-1.5">
               <Upload className="h-3.5 w-3.5" />
