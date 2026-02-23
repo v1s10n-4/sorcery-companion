@@ -61,3 +61,55 @@ export const RARITY_ACTIVE: Record<string, string> = {
   Elite: "bg-purple-900/60 border-purple-500 text-purple-100",
   Unique: "bg-amber-900/60 border-amber-500 text-amber-100",
 };
+
+// ── Card detail page types ──
+
+export interface DetailVariant {
+  id: string;
+  slug: string;
+  finish: string;
+  product: string;
+  artist: string | null;
+  flavorText: string | null;
+  typeText: string | null;
+  blurDataUrl: string | null;
+}
+
+export interface Printing {
+  id: string; // CardSet id
+  setName: string;
+  setSlug: string;
+  releasedAt: string | null;
+  rarity: string | null;
+  type: string | null;
+  rulesText: string | null;
+  cost: number | null;
+  attack: number | null;
+  defence: number | null;
+  life: number | null;
+  thresholdAir: number | null;
+  thresholdEarth: number | null;
+  thresholdFire: number | null;
+  thresholdWater: number | null;
+  variants: DetailVariant[];
+}
+
+export interface CardDetail {
+  id: string;
+  name: string;
+  type: string;
+  rarity: string | null;
+  rulesText: string | null;
+  cost: number | null;
+  attack: number | null;
+  defence: number | null;
+  life: number | null;
+  elements: string[];
+  keywords: string[];
+  subTypes: string[];
+  thresholdAir: number;
+  thresholdEarth: number;
+  thresholdFire: number;
+  thresholdWater: number;
+  printings: Printing[];
+}
