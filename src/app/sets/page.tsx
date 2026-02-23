@@ -1,4 +1,10 @@
+import type { Metadata } from "next";
 import { Suspense } from "react";
+
+export const metadata: Metadata = {
+  title: "Sets — Sorcery Companion",
+  description: "Browse all Sorcery: Contested Realm card sets",
+};
 import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";

@@ -1,4 +1,5 @@
 import { cache } from "react";
+import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 
@@ -46,7 +47,7 @@ export const getUser = cache(async () => {
 export async function requireUser() {
   const user = await getUser();
   if (!user) {
-    throw new Error("Unauthorized");
+    redirect("/login");
   }
   return user;
 }

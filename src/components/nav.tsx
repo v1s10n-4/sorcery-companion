@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getUser } from "@/lib/auth";
 import { UserMenu } from "@/components/user-menu";
+import { MobileNav } from "@/components/mobile-nav";
 
 export async function Nav() {
   const user = await getUser();
@@ -15,7 +16,9 @@ export async function Nav() {
           >
             Sorcery Companion
           </Link>
-          <div className="flex items-center gap-4 text-sm">
+
+          {/* Desktop nav */}
+          <div className="hidden sm:flex items-center gap-4 text-sm">
             <Link
               href="/"
               className="text-muted-foreground hover:text-foreground transition-colors"
@@ -55,6 +58,15 @@ export async function Nav() {
                 Sign in
               </Link>
             )}
+          </div>
+
+          {/* Mobile nav */}
+          <div className="sm:hidden">
+            <MobileNav
+              isLoggedIn={!!user}
+              userName={user?.name || "User"}
+              avatarUrl={user?.avatarUrl ?? null}
+            />
           </div>
         </div>
       </div>

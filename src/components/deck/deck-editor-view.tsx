@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect, useRef } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -79,6 +79,27 @@ export function DeckEditorView({
 
   const atlasTotal = atlas.reduce((s, c) => s + c.quantity, 0);
   const spellbookTotal = spellbook.reduce((s, c) => s + c.quantity, 0);
+
+  // Debounced auto-search
+  const searchTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => {
+    if (!query.trim()) {
+      setResults([]);
+      return;
+    }
+    clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(async () => {
+      setSearching(true);
+      setError(null);
+      try {
+        const data = await searchCardsForDeck(query, activeSection);
+        setResults(data);
+      } finally {
+        setSearching(false);
+      }
+    }, 300);
+    return () => clearTimeout(searchTimer.current);
+  }, [query, activeSection]);
 
   const handleSearch = async () => {
     if (!query.trim()) return;
