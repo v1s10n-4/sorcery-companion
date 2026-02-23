@@ -1,4 +1,15 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
-  <path d="M12 3L7 12C7 12 7 18 12 18C17 18 17 12 17 12L12 3Z" fill="#3B82C4" stroke="#2563A0" stroke-width="0.5"/>
-  <path d="M10 12.5C10 12.5 10.5 14 12 14C13.5 14 14 12.5 14 12.5" stroke="#7BB8E0" stroke-width="1" stroke-linecap="round" fill="none"/>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+  <defs>
+    <style>
+      .cls-1 {
+        fill: #64bfdd;
+        stroke: #000;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        stroke-width: .65px;
+      }
+    </style>
+  </defs>
+  <path class="cls-1" d="M4.4,4.38h39.19c.97,0,1.89.52,2.39,1.36.5.84.53,1.9.06,2.77l-19.9,35.68c-.49.89-1.42,1.44-2.43,1.44h0c-1.03,0-1.96-.57-2.45-1.47L1.96,8.5c-.47-.88-.44-1.94.06-2.78.5-.83,1.41-1.35,2.38-1.35ZM39.73,9.43H8.21l15.53,28.68,16-28.68Z"/>
 </svg>

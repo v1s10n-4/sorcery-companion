@@ -1,5 +1,15 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
-  <path d="M3 8C3 8 5.5 6 9 6C13.5 6 14 9 14 9" stroke="#8BBBD9" stroke-width="2" stroke-linecap="round" fill="none"/>
-  <path d="M4 12C4 12 7 10 11 10C16 10 17 13 17 13" stroke="#6FA3C4" stroke-width="2" stroke-linecap="round" fill="none"/>
-  <path d="M6 16C6 16 8 14.5 11.5 14.5C15.5 14.5 16 17 16 17" stroke="#8BBBD9" stroke-width="2" stroke-linecap="round" fill="none"/>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+  <defs>
+    <style>
+      .cls-1 {
+        fill: #a9b4d8;
+        stroke: #000;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        stroke-width: .65px;
+      }
+    </style>
+  </defs>
+  <path class="cls-1" d="M46.04,39.5l-4.32-7.99h3.77c.39.01.7-.3.7-.69v-3.66c0-.39-.3-.7-.69-.7l-6.52-.02L26.75,3.85c-.49-.91-1.42-1.47-2.45-1.47h0c-1.01,0-1.94.55-2.43,1.44l-12.58,22.55-6.62-.02c-.39,0-.7.31-.7.7v3.66c-.01.39.3.7.69.7h3.82s-4.51,8.09-4.51,8.09c-.47.86-.44,1.92.06,2.77.5.84,1.41,1.36,2.39,1.36h39.19c.97,0,1.88-.52,2.38-1.35.5-.84.53-1.9.06-2.78ZM24.26,9.88l8.96,16.55-18.16-.05,9.2-16.5ZM8.27,38.57l3.98-7.14,23.72.06,3.83,7.07H8.27Z"/>
 </svg>
