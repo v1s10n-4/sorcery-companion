@@ -11,6 +11,8 @@ export interface BrowserCard {
   life: number | null;
   elements: string[];
   rulesText: string | null;
+  keywords: string[];
+  subTypes: string[];
   variantSlug: string | null;
   blurDataUrl: string | null;
   setSlugs: string[];

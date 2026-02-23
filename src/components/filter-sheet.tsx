@@ -19,6 +19,13 @@ import {
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
+interface FacetCounts {
+  types: Record<string, number>;
+  elements: Record<string, number>;
+  rarities: Record<string, number>;
+  sets: Record<string, number>;
+}
+
 interface FilterSheetProps {
   types: string[];
   rarities: string[];
@@ -27,6 +34,7 @@ interface FilterSheetProps {
   onToggle: (key: keyof Filters, value: string) => void;
   onClear: () => void;
   activeCount: number;
+  facetCounts: FacetCounts;
 }
 
 export function FilterSheet({
@@ -37,6 +45,7 @@ export function FilterSheet({
   onToggle,
   onClear,
   activeCount,
+  facetCounts,
 }: FilterSheetProps) {
   return (
     <Sheet>
@@ -68,85 +77,118 @@ export function FilterSheet({
           {/* Elements */}
           <FilterGroup label="Element">
             <div className="flex flex-wrap gap-2">
-              {ELEMENTS.map((el) => (
-                <button
-                  key={el}
-                  onClick={() => onToggle("element", el)}
-                  className={cn(
-                    "flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm transition-all",
-                    filters.element === el
-                      ? "border-amber-500 bg-amber-900/30 text-amber-100"
-                      : "border-border hover:border-muted-foreground/50 text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  <ElementIcon element={el} size="sm" />
-                  {el}
-                </button>
-              ))}
+              {ELEMENTS.map((el) => {
+                const count = facetCounts.elements[el] ?? 0;
+                return (
+                  <button
+                    key={el}
+                    onClick={() => onToggle("element", el)}
+                    className={cn(
+                      "flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm transition-all",
+                      filters.element === el
+                        ? "border-amber-500 bg-amber-900/30 text-amber-100"
+                        : count === 0
+                          ? "border-border/50 text-muted-foreground/40 cursor-not-allowed"
+                          : "border-border hover:border-muted-foreground/50 text-muted-foreground hover:text-foreground"
+                    )}
+                    disabled={count === 0 && filters.element !== el}
+                  >
+                    <ElementIcon
+                      element={el}
+                      size="sm"
+                      className={count === 0 && filters.element !== el ? "opacity-30" : ""}
+                    />
+                    {el}
+                    <span className="text-[10px] opacity-50">{count}</span>
+                  </button>
+                );
+              })}
             </div>
           </FilterGroup>
 
           {/* Types */}
           <FilterGroup label="Type">
             <div className="flex flex-wrap gap-2">
-              {types.map((t) => (
-                <button
-                  key={t}
-                  onClick={() => onToggle("type", t)}
-                  className={cn(
-                    "px-3 py-1.5 rounded-lg border text-sm transition-all",
-                    filters.type === t
-                      ? "border-amber-500 bg-amber-900/30 text-amber-100"
-                      : "border-border hover:border-muted-foreground/50 text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  {t}
-                </button>
-              ))}
+              {types.map((t) => {
+                const count = facetCounts.types[t] ?? 0;
+                return (
+                  <button
+                    key={t}
+                    onClick={() => onToggle("type", t)}
+                    className={cn(
+                      "px-3 py-1.5 rounded-lg border text-sm transition-all",
+                      filters.type === t
+                        ? "border-amber-500 bg-amber-900/30 text-amber-100"
+                        : count === 0
+                          ? "border-border/50 text-muted-foreground/40 cursor-not-allowed"
+                          : "border-border hover:border-muted-foreground/50 text-muted-foreground hover:text-foreground"
+                    )}
+                    disabled={count === 0 && filters.type !== t}
+                  >
+                    {t}
+                    <span className="ml-1 text-[10px] opacity-50">{count}</span>
+                  </button>
+                );
+              })}
             </div>
           </FilterGroup>
 
           {/* Rarity */}
           <FilterGroup label="Rarity">
             <div className="flex flex-wrap gap-2">
-              {rarities.map((r) => (
-                <button
-                  key={r}
-                  onClick={() => onToggle("rarity", r)}
-                  className={cn(
-                    "px-3 py-1.5 rounded-lg border text-sm transition-all",
-                    filters.rarity === r
-                      ? RARITY_ACTIVE[r] || "border-amber-500 bg-amber-900/30 text-amber-100"
-                      : cn(
-                          RARITY_COLORS[r] || "border-border text-muted-foreground",
-                          "hover:opacity-80"
-                        )
-                  )}
-                >
-                  {r}
-                </button>
-              ))}
+              {rarities.map((r) => {
+                const count = facetCounts.rarities[r] ?? 0;
+                return (
+                  <button
+                    key={r}
+                    onClick={() => onToggle("rarity", r)}
+                    className={cn(
+                      "px-3 py-1.5 rounded-lg border text-sm transition-all",
+                      filters.rarity === r
+                        ? RARITY_ACTIVE[r] ||
+                            "border-amber-500 bg-amber-900/30 text-amber-100"
+                        : count === 0
+                          ? "border-border/50 text-muted-foreground/40 cursor-not-allowed"
+                          : cn(
+                              RARITY_COLORS[r] ||
+                                "border-border text-muted-foreground",
+                              "hover:opacity-80"
+                            )
+                    )}
+                    disabled={count === 0 && filters.rarity !== r}
+                  >
+                    {r}
+                    <span className="ml-1 text-[10px] opacity-50">{count}</span>
+                  </button>
+                );
+              })}
             </div>
           </FilterGroup>
 
           {/* Sets */}
           <FilterGroup label="Set">
             <div className="flex flex-col gap-1.5">
-              {sets.map((s) => (
-                <button
-                  key={s.slug}
-                  onClick={() => onToggle("set", s.slug)}
-                  className={cn(
-                    "flex items-center justify-between px-3 py-2 rounded-lg border text-sm transition-all text-left",
-                    filters.set === s.slug
-                      ? "border-amber-500 bg-amber-900/30 text-amber-100"
-                      : "border-border hover:border-muted-foreground/50 text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  <span>{s.name}</span>
-                  <span className="text-xs opacity-50">{s.cardCount}</span>
-                </button>
-              ))}
+              {sets.map((s) => {
+                const count = facetCounts.sets[s.slug] ?? 0;
+                return (
+                  <button
+                    key={s.slug}
+                    onClick={() => onToggle("set", s.slug)}
+                    className={cn(
+                      "flex items-center justify-between px-3 py-2 rounded-lg border text-sm transition-all text-left",
+                      filters.set === s.slug
+                        ? "border-amber-500 bg-amber-900/30 text-amber-100"
+                        : count === 0
+                          ? "border-border/50 text-muted-foreground/40 cursor-not-allowed"
+                          : "border-border hover:border-muted-foreground/50 text-muted-foreground hover:text-foreground"
+                    )}
+                    disabled={count === 0 && filters.set !== s.slug}
+                  >
+                    <span>{s.name}</span>
+                    <span className="text-[10px] opacity-50">{count}</span>
+                  </button>
+                );
+              })}
             </div>
           </FilterGroup>
         </div>

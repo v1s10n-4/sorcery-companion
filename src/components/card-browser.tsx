@@ -1,22 +1,64 @@
 "use client";
 
-import { useState, useMemo, useCallback, useEffect } from "react";
-import { Search, X } from "lucide-react";
+import {
+  useState,
+  useMemo,
+  useCallback,
+  useEffect,
+  useRef,
+} from "react";
+import { Search, X, CircleHelp, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useDebounce } from "@/hooks/use-debounce";
 import { CardGrid } from "@/components/card-grid";
-import { Pagination } from "@/components/pagination";
 import { FilterSheet } from "@/components/filter-sheet";
 import { SortMenu } from "@/components/sort-menu";
 import { ElementIcon } from "@/components/icons";
+import { tokenize, matchesTokens, SEARCH_HELP } from "@/lib/search";
 import type { BrowserCard, SetInfo, Filters, SortKey } from "@/lib/types";
-import { RARITY_ORDER } from "@/lib/types";
+import { ELEMENTS, RARITY_ORDER } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
-const PAGE_SIZE = 42; // 7 cols × 6 rows on XL
+const BATCH_SIZE = 42;
 
 interface CardBrowserProps {
   cards: BrowserCard[];
   sets: SetInfo[];
+}
+
+// ── UI filter application (separate from search tokens) ──
+
+function applyUiFilters(cards: BrowserCard[], filters: Filters): BrowserCard[] {
+  let result = cards;
+  if (filters.type) result = result.filter((c) => c.type === filters.type);
+  if (filters.element)
+    result = result.filter((c) => c.elements.includes(filters.element));
+  if (filters.rarity)
+    result = result.filter((c) => c.rarity === filters.rarity);
+  if (filters.set)
+    result = result.filter((c) => c.setSlugs.includes(filters.set));
+  return result;
+}
+
+function sortCards(cards: BrowserCard[], sort: SortKey): BrowserCard[] {
+  return [...cards].sort((a, b) => {
+    switch (sort) {
+      case "cost-asc":
+        return (a.cost ?? 99) - (b.cost ?? 99) || a.name.localeCompare(b.name);
+      case "cost-desc":
+        return (b.cost ?? -1) - (a.cost ?? -1) || a.name.localeCompare(b.name);
+      case "attack":
+        return (
+          (b.attack ?? -1) - (a.attack ?? -1) || a.name.localeCompare(b.name)
+        );
+      case "defence":
+        return (
+          (b.defence ?? -1) - (a.defence ?? -1) || a.name.localeCompare(b.name)
+        );
+      default:
+        return a.name.localeCompare(b.name);
+    }
+  });
 }
 
 export function CardBrowser({ cards, sets }: CardBrowserProps) {
@@ -28,71 +70,113 @@ export function CardBrowser({ cards, sets }: CardBrowserProps) {
     set: "",
   });
   const [sort, setSort] = useState<SortKey>("name");
-  const [page, setPage] = useState(1);
+  const [visibleCount, setVisibleCount] = useState(BATCH_SIZE);
+  const [showHelp, setShowHelp] = useState(false);
+  const sentinelRef = useRef<HTMLDivElement>(null);
 
   const debouncedSearch = useDebounce(search, 150);
 
-  // Derive filter options from data
+  // Derive filter options
   const types = useMemo(
     () => [...new Set(cards.map((c) => c.type))].sort(),
     [cards]
   );
-
   const rarities = useMemo(() => {
     const present = new Set(cards.map((c) => c.rarity).filter(Boolean));
     return RARITY_ORDER.filter((r) => present.has(r)) as string[];
   }, [cards]);
 
-  // Filter + sort
-  const filtered = useMemo(() => {
-    let result = cards;
+  // ── Search + Filter pipeline ──
 
-    if (debouncedSearch) {
-      const q = debouncedSearch.toLowerCase();
-      result = result.filter(
-        (c) =>
-          c.name.toLowerCase().includes(q) ||
-          c.rulesText?.toLowerCase().includes(q)
-      );
-    }
-
-    if (filters.type) result = result.filter((c) => c.type === filters.type);
-    if (filters.element)
-      result = result.filter((c) => c.elements.includes(filters.element));
-    if (filters.rarity)
-      result = result.filter((c) => c.rarity === filters.rarity);
-    if (filters.set)
-      result = result.filter((c) => c.setSlugs.includes(filters.set));
-
-    // Sort
-    return [...result].sort((a, b) => {
-      switch (sort) {
-        case "cost-asc":
-          return (a.cost ?? 99) - (b.cost ?? 99) || a.name.localeCompare(b.name);
-        case "cost-desc":
-          return (b.cost ?? -1) - (a.cost ?? -1) || a.name.localeCompare(b.name);
-        case "attack":
-          return (b.attack ?? -1) - (a.attack ?? -1) || a.name.localeCompare(b.name);
-        case "defence":
-          return (b.defence ?? -1) - (a.defence ?? -1) || a.name.localeCompare(b.name);
-        default:
-          return a.name.localeCompare(b.name);
-      }
-    });
-  }, [cards, debouncedSearch, filters, sort]);
-
-  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
-  const pageCards = filtered.slice(
-    (page - 1) * PAGE_SIZE,
-    page * PAGE_SIZE
+  // Step 1: Parse search query
+  const searchTokens = useMemo(
+    () => tokenize(debouncedSearch),
+    [debouncedSearch]
   );
 
-  // Reset page on filter/search changes
+  // Step 2: Apply search tokens
+  const searchMatched = useMemo(
+    () =>
+      searchTokens.length === 0
+        ? cards
+        : cards.filter((c) => matchesTokens(c, searchTokens)),
+    [cards, searchTokens]
+  );
+
+  // Step 3: Apply UI filters + sort
+  const filtered = useMemo(
+    () => sortCards(applyUiFilters(searchMatched, filters), sort),
+    [searchMatched, filters, sort]
+  );
+
+  // ── Faceted counts (cross-filtered) ──
+
+  const facetCounts = useMemo(() => {
+    const base = searchMatched; // search applied, no UI filters
+
+    const withoutType = applyUiFilters(base, { ...filters, type: "" });
+    const withoutElement = applyUiFilters(base, { ...filters, element: "" });
+    const withoutRarity = applyUiFilters(base, { ...filters, rarity: "" });
+    const withoutSet = applyUiFilters(base, { ...filters, set: "" });
+
+    return {
+      types: Object.fromEntries(
+        types.map((t) => [t, withoutType.filter((c) => c.type === t).length])
+      ),
+      elements: Object.fromEntries(
+        ELEMENTS.map((e) => [
+          e,
+          withoutElement.filter((c) => c.elements.includes(e)).length,
+        ])
+      ),
+      rarities: Object.fromEntries(
+        rarities.map((r) => [
+          r,
+          withoutRarity.filter((c) => c.rarity === r).length,
+        ])
+      ),
+      sets: Object.fromEntries(
+        sets.map((s) => [
+          s.slug,
+          withoutSet.filter((c) => c.setSlugs.includes(s.slug)).length,
+        ])
+      ),
+    };
+  }, [searchMatched, filters, types, rarities, sets]);
+
+  // ── Infinite scroll ──
+
+  const visibleCards = filtered.slice(0, visibleCount);
+  const hasMore = visibleCount < filtered.length;
+
+  // Reset on filter/search/sort change
   useEffect(() => {
-    setPage(1);
+    setVisibleCount(BATCH_SIZE);
+    window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
   }, [debouncedSearch, filters, sort]);
 
-  // Sync state to URL (no navigation, just history.replaceState)
+  // IntersectionObserver for loading more
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || !hasMore) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setVisibleCount((prev) =>
+            Math.min(prev + BATCH_SIZE, filtered.length)
+          );
+        }
+      },
+      { rootMargin: "400px" }
+    );
+
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [hasMore, filtered.length]);
+
+  // ── URL sync ──
+
   useEffect(() => {
     const params = new URLSearchParams();
     if (debouncedSearch) params.set("q", debouncedSearch);
@@ -101,12 +185,11 @@ export function CardBrowser({ cards, sets }: CardBrowserProps) {
     if (filters.rarity) params.set("rarity", filters.rarity);
     if (filters.set) params.set("set", filters.set);
     if (sort !== "name") params.set("sort", sort);
-    if (page > 1) params.set("page", String(page));
     const url = params.toString() ? `/?${params.toString()}` : "/";
     window.history.replaceState(null, "", url);
-  }, [debouncedSearch, filters, sort, page]);
+  }, [debouncedSearch, filters, sort]);
 
-  // Read initial state from URL on mount
+  // Read URL on mount
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const q = params.get("q");
@@ -115,7 +198,6 @@ export function CardBrowser({ cards, sets }: CardBrowserProps) {
     const rarity = params.get("rarity");
     const set = params.get("set");
     const sortParam = params.get("sort") as SortKey | null;
-    const pageParam = params.get("page");
 
     if (q) setSearch(q);
     if (type || element || rarity || set) {
@@ -127,9 +209,10 @@ export function CardBrowser({ cards, sets }: CardBrowserProps) {
       });
     }
     if (sortParam) setSort(sortParam);
-    if (pageParam) setPage(Math.max(1, parseInt(pageParam, 10)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ── Filter handlers ──
 
   const toggleFilter = useCallback((key: keyof Filters, value: string) => {
     setFilters((prev) => ({
@@ -148,7 +231,7 @@ export function CardBrowser({ cards, sets }: CardBrowserProps) {
 
   const activeFilterCount = Object.values(filters).filter(Boolean).length;
 
-  // Build active chip list
+  // Active chip list
   const activeChips: { key: keyof Filters; label: string; value: string }[] =
     [];
   if (filters.element)
@@ -158,11 +241,7 @@ export function CardBrowser({ cards, sets }: CardBrowserProps) {
       value: filters.element,
     });
   if (filters.type)
-    activeChips.push({
-      key: "type",
-      label: filters.type,
-      value: filters.type,
-    });
+    activeChips.push({ key: "type", label: filters.type, value: filters.type });
   if (filters.rarity)
     activeChips.push({
       key: "rarity",
@@ -183,19 +262,29 @@ export function CardBrowser({ cards, sets }: CardBrowserProps) {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
           <Input
             type="search"
-            placeholder="Search cards..."
+            placeholder='Search cards... (try type:minion e:fire c:>3)'
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-9 pr-9 h-9"
+            className="pl-9 pr-16 h-9"
           />
-          {search && (
+          <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+            {search && (
+              <button onClick={() => setSearch("")}>
+                <X className="h-4 w-4 text-muted-foreground hover:text-foreground transition-colors" />
+              </button>
+            )}
             <button
-              onClick={() => setSearch("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2"
+              onClick={() => setShowHelp((v) => !v)}
+              className={cn(
+                "p-0.5 rounded transition-colors",
+                showHelp
+                  ? "text-amber-400"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
             >
-              <X className="h-4 w-4 text-muted-foreground hover:text-foreground transition-colors" />
+              <CircleHelp className="h-4 w-4" />
             </button>
-          )}
+          </div>
         </div>
 
         <FilterSheet
@@ -206,10 +295,27 @@ export function CardBrowser({ cards, sets }: CardBrowserProps) {
           onToggle={toggleFilter}
           onClear={clearFilters}
           activeCount={activeFilterCount}
+          facetCounts={facetCounts}
         />
 
         <SortMenu sort={sort} onSort={setSort} />
       </div>
+
+      {/* Search syntax help */}
+      {showHelp && (
+        <div className="rounded-lg border border-border bg-card p-3 text-xs">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
+            {SEARCH_HELP.map((h) => (
+              <div key={h.syntax} className="flex gap-2">
+                <code className="text-amber-300 whitespace-nowrap font-mono">
+                  {h.syntax}
+                </code>
+                <span className="text-muted-foreground">{h.desc}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Active filter chips */}
       {activeChips.length > 0 && (
@@ -241,18 +347,25 @@ export function CardBrowser({ cards, sets }: CardBrowserProps) {
       {/* Result count */}
       <p className="text-xs text-muted-foreground">
         {filtered.length} card{filtered.length !== 1 ? "s" : ""}
+        {hasMore && (
+          <span>
+            {" "}
+            · showing {visibleCount}
+          </span>
+        )}
       </p>
 
       {/* Card grid */}
-      <CardGrid cards={pageCards} />
+      <CardGrid cards={visibleCards} />
 
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <Pagination
-          currentPage={page}
-          totalPages={totalPages}
-          onPageChange={setPage}
-        />
+      {/* Infinite scroll sentinel */}
+      {hasMore && (
+        <div
+          ref={sentinelRef}
+          className="flex justify-center py-8"
+        >
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        </div>
       )}
     </div>
   );
