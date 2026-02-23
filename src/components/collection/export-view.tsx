@@ -3,22 +3,16 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Download, FileSpreadsheet, FileText, Crown } from "lucide-react";
+import { Download, FileSpreadsheet, FileText } from "lucide-react";
 import {
   exportCollectionCsv,
   exportCollectionDecklist,
 } from "@/lib/actions/import-export";
 
-interface ExportViewProps {
-  isPremium: boolean;
-}
-
-export function ExportView({ isPremium }: ExportViewProps) {
+export function ExportView() {
   const [loading, setLoading] = useState<string | null>(null);
 
   const handleExport = async (format: "csv" | "decklist") => {
-    if (!isPremium) return;
-
     setLoading(format);
     try {
       let content: string;
@@ -43,23 +37,6 @@ export function ExportView({ isPremium }: ExportViewProps) {
       setLoading(null);
     }
   };
-
-  if (!isPremium) {
-    return (
-      <Card className="border-amber-500/30 bg-amber-950/10">
-        <CardContent className="p-6 text-center">
-          <Crown className="h-8 w-8 mx-auto text-amber-400 mb-3" />
-          <h2 className="text-lg font-serif font-medium text-amber-100 mb-2">
-            Premium Feature
-          </h2>
-          <p className="text-sm text-muted-foreground mb-4">
-            Export your collection as CSV or decklist format with Premium.
-          </p>
-          <Button disabled>Upgrade (Coming soon)</Button>
-        </CardContent>
-      </Card>
-    );
-  }
 
   return (
     <div className="space-y-3">

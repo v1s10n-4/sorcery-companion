@@ -14,7 +14,7 @@ const RARITY_LIMITS: Record<string, number> = {
 };
 
 const ATLAS_SIZE = 20;
-const SPELLBOOK_SIZE = 40;
+const SPELLBOOK_SIZE = 60;
 
 export async function createDeck(name: string) {
   const user = await requireUser();

@@ -14,6 +14,11 @@ import {
 import { CardImage } from "@/components/card-image";
 import { Badge } from "@/components/ui/badge";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   TrendingUp,
   TrendingDown,
   Package,
@@ -24,9 +29,14 @@ import {
   Download,
   Upload,
   BarChart3,
+  Pencil,
+  Check,
+  X,
+  Minus,
+  Plus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { removeFromCollection } from "@/lib/actions/collection";
+import { removeFromCollection, updateCollectionCard } from "@/lib/actions/collection";
 import Link from "next/link";
 
 export interface CollectionCardData {
@@ -59,19 +69,20 @@ interface CollectionViewProps {
   collectionName: string;
   cards: CollectionCardData[];
   stats: CollectionStats;
-  isPremium?: boolean;
 }
 
 type SortField = "name" | "value" | "roi" | "date" | "quantity";
+
+const CONDITIONS = ["NM", "LP", "MP", "HP", "DMG"];
 
 export function CollectionView({
   collectionId,
   collectionName,
   cards,
   stats,
-  isPremium = false,
 }: CollectionViewProps) {
   const [removing, setRemoving] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<SortField>("date");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
@@ -268,73 +279,241 @@ export function CollectionView({
         </p>
       ) : (
         <div className="space-y-2">
-          {filtered.map((c) => {
-            const cardRoi =
-              c.purchasePrice && c.marketPrice
-                ? ((c.marketPrice - c.purchasePrice) / c.purchasePrice) * 100
-                : null;
+          {filtered.map((c) => (
+            <CollectionCardRow
+              key={c.id}
+              card={c}
+              isEditing={editingId === c.id}
+              onEdit={() => setEditingId(editingId === c.id ? null : c.id)}
+              onRemove={() => handleRemove(c.id)}
+              isRemoving={removing === c.id}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
-            return (
-              <div
-                key={c.id}
-                className="flex items-center gap-3 rounded-lg border border-border/50 bg-card p-3 hover:border-border transition-colors"
+function CollectionCardRow({
+  card: c,
+  isEditing,
+  onEdit,
+  onRemove,
+  isRemoving,
+}: {
+  card: CollectionCardData;
+  isEditing: boolean;
+  onEdit: () => void;
+  onRemove: () => void;
+  isRemoving: boolean;
+}) {
+  const [quantity, setQuantity] = useState(c.quantity);
+  const [condition, setCondition] = useState(c.condition);
+  const [purchasePrice, setPurchasePrice] = useState(
+    c.purchasePrice?.toString() ?? ""
+  );
+  const [saving, setSaving] = useState(false);
+
+  const cardRoi =
+    c.purchasePrice && c.marketPrice
+      ? ((c.marketPrice - c.purchasePrice) / c.purchasePrice) * 100
+      : null;
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await updateCollectionCard(c.id, {
+        quantity,
+        condition,
+        purchasePrice: purchasePrice ? parseFloat(purchasePrice) : null,
+      });
+      onEdit(); // close editor
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCancel = () => {
+    setQuantity(c.quantity);
+    setCondition(c.condition);
+    setPurchasePrice(c.purchasePrice?.toString() ?? "");
+    onEdit();
+  };
+
+  return (
+    <div className="rounded-lg border border-border/50 bg-card hover:border-border transition-colors">
+      <div className="flex items-center gap-3 p-3">
+        <Link href={`/cards/${c.cardId}`}>
+          <CardImage
+            slug={c.variantSlug}
+            name={c.cardName}
+            width={40}
+            height={56}
+            className="rounded-sm flex-shrink-0"
+          />
+        </Link>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <Link
+              href={`/cards/${c.cardId}`}
+              className="font-medium text-sm truncate hover:text-amber-200 transition-colors"
+            >
+              {c.cardName}
+            </Link>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge variant="outline" className="text-[10px] shrink-0">
+                  {c.finish}
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent>Card finish / variant</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge variant="outline" className="text-[10px] shrink-0">
+                  {c.condition}
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent>
+                {c.condition === "NM" ? "Near Mint" :
+                 c.condition === "LP" ? "Lightly Played" :
+                 c.condition === "MP" ? "Moderately Played" :
+                 c.condition === "HP" ? "Heavily Played" :
+                 c.condition === "DMG" ? "Damaged" : c.condition}
+              </TooltipContent>
+            </Tooltip>
+          </div>
+          <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
+            <span>×{c.quantity}</span>
+            {c.marketPrice != null && (
+              <span className="text-amber-300">
+                ${(c.marketPrice * c.quantity).toFixed(2)}
+              </span>
+            )}
+            {c.purchasePrice != null && (
+              <span>Paid ${(c.purchasePrice * c.quantity).toFixed(2)}</span>
+            )}
+            {cardRoi !== null && (
+              <span
+                className={
+                  cardRoi >= 0 ? "text-green-400" : "text-red-400"
+                }
               >
-                <Link href={`/cards/${c.cardId}`}>
-                  <CardImage
-                    slug={c.variantSlug}
-                    name={c.cardName}
-                    width={40}
-                    height={56}
-                    className="rounded-sm flex-shrink-0"
-                  />
-                </Link>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <Link
-                      href={`/cards/${c.cardId}`}
-                      className="font-medium text-sm truncate hover:text-amber-200 transition-colors"
-                    >
-                      {c.cardName}
-                    </Link>
-                    <Badge variant="outline" className="text-[10px] shrink-0">
-                      {c.finish}
-                    </Badge>
-                    <Badge variant="outline" className="text-[10px] shrink-0">
-                      {c.condition}
-                    </Badge>
-                  </div>
-                  <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
-                    <span>×{c.quantity}</span>
-                    {c.marketPrice != null && (
-                      <span className="text-amber-300">
-                        ${(c.marketPrice * c.quantity).toFixed(2)}
-                      </span>
-                    )}
-                    {c.purchasePrice != null && (
-                      <span>Paid ${(c.purchasePrice * c.quantity).toFixed(2)}</span>
-                    )}
-                    {cardRoi !== null && (
-                      <span
-                        className={
-                          cardRoi >= 0 ? "text-green-400" : "text-red-400"
-                        }
-                      >
-                        {cardRoi >= 0 ? "+" : ""}
-                        {cardRoi.toFixed(1)}%
-                      </span>
-                    )}
-                  </div>
-                </div>
+                {cardRoi >= 0 ? "+" : ""}
+                {cardRoi.toFixed(1)}%
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-1">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={onEdit}
+                className={cn(
+                  "p-1.5 rounded transition-colors cursor-pointer",
+                  isEditing
+                    ? "text-amber-400 bg-amber-900/20"
+                    : "text-muted-foreground/50 hover:text-foreground"
+                )}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Edit card</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={onRemove}
+                disabled={isRemoving}
+                className="text-muted-foreground/50 hover:text-red-400 transition-colors p-1.5 cursor-pointer"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Remove from collection</TooltipContent>
+          </Tooltip>
+        </div>
+      </div>
+
+      {/* Inline edit panel */}
+      {isEditing && (
+        <div className="px-3 pb-3 pt-0 border-t border-border/30">
+          <div className="flex flex-wrap items-end gap-3 pt-3">
+            <div>
+              <label className="text-[10px] text-muted-foreground block mb-1">Quantity</label>
+              <div className="flex items-center gap-1">
                 <button
-                  onClick={() => handleRemove(c.id)}
-                  disabled={removing === c.id}
-                  className="text-muted-foreground/50 hover:text-red-400 transition-colors p-1 cursor-pointer"
+                  onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                  className="h-8 w-8 rounded border border-border flex items-center justify-center hover:bg-muted transition-colors cursor-pointer"
                 >
-                  <Trash2 className="h-4 w-4" />
+                  <Minus className="h-3 w-3" />
+                </button>
+                <Input
+                  type="number"
+                  min={1}
+                  value={quantity}
+                  onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
+                  className="h-8 w-14 text-xs text-center"
+                />
+                <button
+                  onClick={() => setQuantity(quantity + 1)}
+                  className="h-8 w-8 rounded border border-border flex items-center justify-center hover:bg-muted transition-colors cursor-pointer"
+                >
+                  <Plus className="h-3 w-3" />
                 </button>
               </div>
-            );
-          })}
+            </div>
+            <div>
+              <label className="text-[10px] text-muted-foreground block mb-1">Condition</label>
+              <Select value={condition} onValueChange={setCondition}>
+                <SelectTrigger className="h-8 w-20 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {CONDITIONS.map((cond) => (
+                    <SelectItem key={cond} value={cond} className="text-xs">
+                      {cond}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-[10px] text-muted-foreground block mb-1">Purchase price ($)</label>
+              <Input
+                type="number"
+                min={0}
+                step={0.01}
+                placeholder="0.00"
+                value={purchasePrice}
+                onChange={(e) => setPurchasePrice(e.target.value)}
+                className="h-8 w-24 text-xs"
+              />
+            </div>
+            <div className="flex gap-1.5 ml-auto">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 gap-1"
+                onClick={handleCancel}
+              >
+                <X className="h-3 w-3" />
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                className="h-8 gap-1"
+                onClick={handleSave}
+                disabled={saving}
+              >
+                <Check className="h-3 w-3" />
+                {saving ? "Saving..." : "Save"}
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>

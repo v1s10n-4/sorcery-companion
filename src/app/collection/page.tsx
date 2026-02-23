@@ -113,7 +113,6 @@ export default async function CollectionPage() {
           totalMarketValue,
           totalCostBasis,
         }}
-        isPremium={user.plan === "premium"}
       />
       <div className="mt-6">
         <SharingSettings

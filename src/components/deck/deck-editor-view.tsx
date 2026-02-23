@@ -133,7 +133,7 @@ export function DeckEditorView({
   const sections: { key: Section; label: string; icon: React.ReactNode; count: string }[] = [
     { key: "avatar", label: "Avatar", icon: <User className="h-3.5 w-3.5" />, count: avatar ? "1/1" : "0/1" },
     { key: "atlas", label: "Atlas", icon: <Map className="h-3.5 w-3.5" />, count: `${atlasTotal}/20` },
-    { key: "spellbook", label: "Spellbook", icon: <BookOpen className="h-3.5 w-3.5" />, count: `${spellbookTotal}/40` },
+    { key: "spellbook", label: "Spellbook", icon: <BookOpen className="h-3.5 w-3.5" />, count: `${spellbookTotal}/60` },
   ];
 
   const currentCards =
@@ -250,10 +250,10 @@ export function DeckEditorView({
             <span className={atlasTotal === 20 ? "text-green-400" : ""}>
               Atlas: {atlasTotal}/20
             </span>
-            <span className={spellbookTotal === 40 ? "text-green-400" : ""}>
-              Spellbook: {spellbookTotal}/40
+            <span className={spellbookTotal === 60 ? "text-green-400" : ""}>
+              Spellbook: {spellbookTotal}/60
             </span>
-            {atlasTotal === 20 && spellbookTotal === 40 && avatar && (
+            {atlasTotal === 20 && spellbookTotal === 60 && avatar && (
               <Badge className="bg-green-600/20 text-green-400 border-green-600/30 text-[10px]">
                 Complete
               </Badge>

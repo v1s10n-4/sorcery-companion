@@ -93,7 +93,7 @@ export const getCard = cache(async (id: string) => {
             },
           },
         },
-        orderBy: { set: { releasedAt: "asc" } },
+        orderBy: { set: { releasedAt: "desc" } },
       },
       variants: {
         orderBy: { createdAt: "asc" },

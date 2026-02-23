@@ -14,7 +14,7 @@ export default async function ExportPage() {
       <h1 className="text-2xl font-bold font-serif text-amber-100 mb-6">
         Export Collection
       </h1>
-      <ExportView isPremium={user.plan === "premium"} />
+      <ExportView />
     </main>
   );
 }

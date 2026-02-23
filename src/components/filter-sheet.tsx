@@ -3,6 +3,7 @@
 import { useState, useCallback, useMemo } from "react";
 import {
   Sheet,
+  SheetClose,
   SheetContent,
   SheetHeader,
   SheetTitle,
@@ -23,6 +24,7 @@ import {
   ChevronDown,
   ChevronUp,
   Search,
+  X,
 } from "lucide-react";
 import { ElementIcon } from "@/components/icons";
 import {
@@ -144,7 +146,7 @@ export function FilterSheet({
   }, [query, onQueryChange]);
 
   return (
-    <Sheet>
+    <Sheet modal={false}>
       <SheetTrigger asChild>
         <Button variant="outline" size="sm" className="gap-1.5 shrink-0">
           <SlidersHorizontal className="h-4 w-4" />
@@ -156,9 +158,13 @@ export function FilterSheet({
           )}
         </Button>
       </SheetTrigger>
-      <SheetContent side="right" className="w-80 sm:w-96 overflow-y-auto px-5">
-        <SheetHeader className="pb-4">
+      <SheetContent side="right" className="w-80 sm:w-96 overflow-y-auto px-5" showCloseButton={false} overlay={false}>
+        <SheetHeader className="pb-4 flex flex-row items-center justify-between">
           <SheetTitle>Filters</SheetTitle>
+          <SheetClose className="rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2">
+            <X className="h-4 w-4" />
+            <span className="sr-only">Close</span>
+          </SheetClose>
         </SheetHeader>
 
         <div className="flex flex-col gap-6">

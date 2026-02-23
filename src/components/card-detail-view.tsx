@@ -7,10 +7,39 @@ import { CardImage } from "@/components/card-image";
 import { PriceDisplay } from "@/components/price-display";
 import { AddToCollectionButton } from "@/components/add-to-collection-button";
 import { ElementBadges, StatIcon, Thresholds } from "@/components/icons";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Paintbrush, Check } from "lucide-react";
 import { RARITY_COLORS } from "@/lib/types";
 import type { CardDetail, Printing, DetailVariant } from "@/lib/types";
 import { cn } from "@/lib/utils";
+
+// Tooltip descriptions
+const RARITY_DESCRIPTIONS: Record<string, string> = {
+  Ordinary: "Common card — up to 4 copies per deck",
+  Exceptional: "Uncommon card — up to 4 copies per deck",
+  Elite: "Rare card — up to 2 copies per deck",
+  Unique: "Legendary card — 1 copy per deck",
+};
+
+const TYPE_DESCRIPTIONS: Record<string, string> = {
+  Avatar: "Your hero — determines starting life and special ability",
+  Site: "Placed in the Atlas (20-card grid) — generates mana and holds minions",
+  Minion: "Creatures that fight for you in the Spellbook",
+  Magic: "One-time spell effects in the Spellbook",
+  Artifact: "Persistent items that provide ongoing effects in the Spellbook",
+  Aura: "Enchantments that modify sites or minions in the Spellbook",
+};
+
+const STAT_DESCRIPTIONS: Record<string, string> = {
+  cost: "Mana cost to play this card",
+  attack: "Damage dealt in combat",
+  defence: "Damage absorbed before destruction",
+  life: "Starting life points (Avatar only)",
+};
 
 interface VariantWithPrinting extends DetailVariant {
   printing: Printing;
@@ -57,7 +86,7 @@ export function CardDetailView({ card, isLoggedIn = false }: { card: CardDetail;
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-[300px_1fr] gap-8">
-      {/* ── Left: Image ── */}
+      {/* ── Left: Image + Actions ── */}
       <div className="space-y-4">
         <CardImage
           key={selected.slug}
@@ -82,12 +111,22 @@ export function CardDetailView({ card, isLoggedIn = false }: { card: CardDetail;
             )}
           </p>
           <div className="flex items-center gap-2">
-            <Badge variant="outline" className="text-[10px]">
-              {selected.finish}
-            </Badge>
-            <Badge variant="outline" className="text-[10px]">
-              {selected.product.replace(/_/g, " ")}
-            </Badge>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge variant="outline" className="text-[10px]">
+                  {selected.finish}
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent>Card finish variant</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge variant="outline" className="text-[10px]">
+                  {selected.product.replace(/_/g, " ")}
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent>Product type (e.g. booster, precon)</TooltipContent>
+            </Tooltip>
           </div>
           {selected.artist && (
             <p className="flex items-center gap-1">
@@ -121,19 +160,36 @@ export function CardDetailView({ card, isLoggedIn = false }: { card: CardDetail;
         </h1>
 
         <div className="flex flex-wrap gap-2 mb-4">
-          <Badge variant="secondary">{printing.type ?? card.type}</Badge>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Badge variant="secondary">{printing.type ?? card.type}</Badge>
+            </TooltipTrigger>
+            <TooltipContent>
+              {TYPE_DESCRIPTIONS[printing.type ?? card.type] ?? "Card type"}
+            </TooltipContent>
+          </Tooltip>
           {rarity && (
-            <Badge
-              variant="outline"
-              className={RARITY_COLORS[rarity] || ""}
-            >
-              {rarity}
-            </Badge>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge
+                  variant="outline"
+                  className={RARITY_COLORS[rarity] || ""}
+                >
+                  {rarity}
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent>
+                {RARITY_DESCRIPTIONS[rarity] ?? rarity}
+              </TooltipContent>
+            </Tooltip>
           )}
           {card.subTypes.map((st) => (
-            <Badge key={st} variant="outline">
-              {st}
-            </Badge>
+            <Tooltip key={st}>
+              <TooltipTrigger asChild>
+                <Badge variant="outline">{st}</Badge>
+              </TooltipTrigger>
+              <TooltipContent>Subtype</TooltipContent>
+            </Tooltip>
           ))}
         </div>
 
@@ -145,32 +201,52 @@ export function CardDetailView({ card, isLoggedIn = false }: { card: CardDetail;
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
           {cost !== null && (
-            <StatBlock>
-              <StatIcon stat="cost" size="md" />
-              <span className="font-bold text-amber-200 ml-auto text-lg">
-                {cost}
-              </span>
-            </StatBlock>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="flex items-center gap-2 bg-card rounded-lg p-3 border border-border/50">
+                  <StatIcon stat="cost" size="md" />
+                  <span className="font-bold text-amber-200 ml-auto text-lg">
+                    {cost}
+                  </span>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>{STAT_DESCRIPTIONS.cost}</TooltipContent>
+            </Tooltip>
           )}
           {attack !== null && (
-            <StatBlock>
-              <StatIcon stat="attack" size="md" />
-              <span className="font-bold ml-auto text-lg">{attack}</span>
-            </StatBlock>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="flex items-center gap-2 bg-card rounded-lg p-3 border border-border/50">
+                  <StatIcon stat="attack" size="md" />
+                  <span className="font-bold ml-auto text-lg">{attack}</span>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>{STAT_DESCRIPTIONS.attack}</TooltipContent>
+            </Tooltip>
           )}
           {defence !== null && (
-            <StatBlock>
-              <StatIcon stat="defence" size="md" />
-              <span className="font-bold ml-auto text-lg">{defence}</span>
-            </StatBlock>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="flex items-center gap-2 bg-card rounded-lg p-3 border border-border/50">
+                  <StatIcon stat="defence" size="md" />
+                  <span className="font-bold ml-auto text-lg">{defence}</span>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>{STAT_DESCRIPTIONS.defence}</TooltipContent>
+            </Tooltip>
           )}
           {life !== null && (
-            <StatBlock>
-              <StatIcon stat="life" size="md" />
-              <span className="font-bold text-rose-400 ml-auto text-lg">
-                {life}
-              </span>
-            </StatBlock>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="flex items-center gap-2 bg-card rounded-lg p-3 border border-border/50">
+                  <StatIcon stat="life" size="md" />
+                  <span className="font-bold text-rose-400 ml-auto text-lg">
+                    {life}
+                  </span>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>{STAT_DESCRIPTIONS.life}</TooltipContent>
+            </Tooltip>
           )}
         </div>
 
@@ -187,13 +263,17 @@ export function CardDetailView({ card, isLoggedIn = false }: { card: CardDetail;
         {card.keywords.length > 0 && (
           <div className="flex flex-wrap gap-1.5 mb-4">
             {card.keywords.map((kw) => (
-              <Badge
-                key={kw}
-                variant="outline"
-                className="border-amber-700/50 text-amber-300 text-xs"
-              >
-                {kw}
-              </Badge>
+              <Tooltip key={kw}>
+                <TooltipTrigger asChild>
+                  <Badge
+                    variant="outline"
+                    className="border-amber-700/50 text-amber-300 text-xs"
+                  >
+                    {kw}
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent>Keyword ability</TooltipContent>
+              </Tooltip>
             ))}
           </div>
         )}
@@ -276,14 +356,6 @@ export function CardDetailView({ card, isLoggedIn = false }: { card: CardDetail;
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-function StatBlock({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex items-center gap-2 bg-card rounded-lg p-3 border border-border/50">
-      {children}
     </div>
   );
 }

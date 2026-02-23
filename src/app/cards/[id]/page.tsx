@@ -72,7 +72,12 @@ async function CardDetailContent({ id }: { id: string }) {
     thresholdEarth: cs.thresholdEarth,
     thresholdFire: cs.thresholdFire,
     thresholdWater: cs.thresholdWater,
-    variants: cs.variants.map((v) => ({
+    variants: [...cs.variants].sort((a, b) => {
+      // Standard first, then alphabetical
+      if (a.finish === "Standard" && b.finish !== "Standard") return -1;
+      if (b.finish === "Standard" && a.finish !== "Standard") return 1;
+      return a.finish.localeCompare(b.finish);
+    }).map((v) => ({
       id: v.id,
       slug: v.slug,
       finish: v.finish,
