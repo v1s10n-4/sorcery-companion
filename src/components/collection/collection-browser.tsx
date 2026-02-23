@@ -409,82 +409,77 @@ export function CollectionBrowser({
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
           {visibleCards.map((card) => {
             const entries = ownedMap.get(card.id);
             const totalQty = entries?.reduce((s, e) => s + e.quantity, 0) ?? 0;
             const totalMarket = entries?.reduce((s, e) => s + (e.marketPrice ?? 0) * e.quantity, 0) ?? 0;
             const totalCost = entries?.reduce((s, e) => s + (e.purchasePrice ?? 0) * e.quantity, 0) ?? 0;
             const perfPct = totalCost > 0 ? ((totalMarket - totalCost) / totalCost) * 100 : null;
+            const perfAbs = totalCost > 0 ? totalMarket - totalCost : null;
 
             return (
-              <div key={card.id} className="group relative">
-                <Link href={`/cards/${card.id}`} prefetch={false}>
-                  <div className="relative overflow-hidden rounded-lg bg-muted/30">
-                    {card.variantSlug ? (
-                      <CardImage
-                        slug={card.variantSlug}
-                        name={card.name}
-                        width={260}
-                        height={364}
-                        blurDataUrl={card.blurDataUrl}
-                        className={cn(
-                          "w-full h-auto transition-transform duration-200 group-hover:scale-105",
-                          !entries && "opacity-40"
-                        )}
-                      />
-                    ) : (
-                      <div className="aspect-[5/7] flex items-center justify-center text-xs text-muted-foreground">
-                        No image
-                      </div>
-                    )}
+              <Link
+                key={card.id}
+                href={`/cards/${card.id}`}
+                prefetch={false}
+                className="group"
+              >
+                {/* Card image */}
+                <div className="relative overflow-hidden rounded-lg bg-muted/30">
+                  {card.variantSlug ? (
+                    <CardImage
+                      slug={card.variantSlug}
+                      name={card.name}
+                      width={260}
+                      height={364}
+                      blurDataUrl={card.blurDataUrl}
+                      className={cn(
+                        "w-full h-auto transition-transform duration-200 group-hover:scale-105",
+                        !entries && "opacity-40"
+                      )}
+                    />
+                  ) : (
+                    <div className="aspect-[5/7] flex items-center justify-center text-xs text-muted-foreground">
+                      No image
+                    </div>
+                  )}
 
-                    {/* Owned badge */}
-                    {entries && (
-                      <>
-                        <div className="absolute top-1 right-1 bg-amber-600/90 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">
-                          ×{totalQty}
-                        </div>
-                        {/* Price performance badge */}
-                        {perfPct !== null && (
-                          <div className={cn(
-                            "absolute top-1 left-1 text-[9px] font-bold px-1 py-0.5 rounded flex items-center gap-0.5",
-                            perfPct >= 0
-                              ? "bg-green-600/90 text-white"
-                              : "bg-red-600/90 text-white"
-                          )}>
-                            {perfPct >= 0 ? (
-                              <TrendingUp className="h-2.5 w-2.5" />
-                            ) : (
-                              <TrendingDown className="h-2.5 w-2.5" />
-                            )}
-                            {perfPct >= 0 ? "+" : ""}{perfPct.toFixed(0)}%
-                          </div>
-                        )}
-                      </>
-                    )}
+                  {/* Quantity badge — bottom left of image */}
+                  {entries && totalQty > 0 && (
+                    <div className="absolute bottom-1.5 left-1.5 bg-black/75 text-white text-[10px] font-bold px-1.5 py-0.5 rounded min-w-[20px] text-center">
+                      {totalQty}
+                    </div>
+                  )}
 
-                    {/* Hover overlay with value */}
-                    {entries && (
-                      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/50 to-transparent p-2 pt-6 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                        <div className="flex items-center justify-between text-[9px]">
-                          <span className="text-amber-300">
-                            ${totalMarket.toFixed(2)}
-                          </span>
-                          {totalCost > 0 && (
-                            <span className="text-white/60">
-                              paid ${totalCost.toFixed(2)}
-                            </span>
-                          )}
-                        </div>
-                      </div>
+                  {/* Price badge — bottom right of image */}
+                  {entries && totalMarket > 0 && (
+                    <div className="absolute bottom-1.5 right-1.5 bg-black/75 text-amber-300 text-[10px] font-bold px-1.5 py-0.5 rounded">
+                      ${totalMarket.toFixed(2)}
+                    </div>
+                  )}
+                </div>
+
+                {/* Info below image — Manabox style */}
+                <div className="mt-1.5 px-0.5">
+                  <div className="flex items-center justify-between gap-1">
+                    <p className="text-[11px] truncate text-muted-foreground group-hover:text-foreground transition-colors flex-1 min-w-0">
+                      {card.name}
+                    </p>
+                    {entries && perfPct !== null && (
+                      <span className={cn(
+                        "text-[10px] font-semibold whitespace-nowrap flex items-center gap-0.5 shrink-0",
+                        perfPct >= 0 ? "text-green-400" : "text-red-400"
+                      )}>
+                        {perfPct >= 0 ? "+" : ""}{perfAbs!.toFixed(2)}
+                        <span className="text-[9px] opacity-75">
+                          ({perfPct >= 0 ? "+" : ""}{perfPct.toFixed(0)}%)
+                        </span>
+                      </span>
                     )}
                   </div>
-                </Link>
-                <p className="text-[11px] mt-1 text-center truncate text-muted-foreground group-hover:text-foreground transition-colors px-0.5">
-                  {card.name}
-                </p>
-              </div>
+                </div>
+              </Link>
             );
           })}
         </div>
