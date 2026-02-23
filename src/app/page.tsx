@@ -4,7 +4,6 @@ import { CardBrowser } from "@/components/card-browser";
 import { CardBrowserSkeleton } from "@/components/skeletons";
 import type { SetInfo } from "@/lib/types";
 
-export const revalidate = 3600;
 
 export default function Home() {
   return (

@@ -8,7 +8,6 @@ import { SetDetailSkeleton } from "@/components/skeletons";
 import { SetPagination } from "./pagination";
 import { getSetBySlug, getSetCards, getAllSetSlugs } from "@/lib/data";
 
-export const revalidate = 3600;
 
 const PAGE_SIZE = 42;
 

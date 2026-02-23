@@ -9,7 +9,6 @@ import { getCard } from "@/lib/data";
 import type { CardDetail, Printing, VariantPrice } from "@/lib/types";
 import { getUser } from "@/lib/auth";
 
-export const revalidate = 3600;
 
 interface PageProps {
   params: Promise<{ id: string }>;

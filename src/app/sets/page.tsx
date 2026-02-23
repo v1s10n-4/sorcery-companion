@@ -11,7 +11,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SetsListSkeleton } from "@/components/skeletons";
 import { getFullSets } from "@/lib/data";
 
-export const revalidate = 3600;
 
 export default function SetsPage() {
   return (
