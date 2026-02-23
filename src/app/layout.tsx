@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Cinzel, Inter } from "next/font/google";
+import { NuqsAdapter } from "nuqs/adapters/next/app";
 import { Nav } from "@/components/nav";
 import "./globals.css";
 
@@ -30,8 +31,10 @@ export default function RootLayout({
       <body
         className={`${cinzel.variable} ${inter.variable} antialiased min-h-screen bg-background text-foreground font-sans`}
       >
-        <Nav />
-        {children}
+        <NuqsAdapter>
+          <Nav />
+          {children}
+        </NuqsAdapter>
       </body>
     </html>
   );

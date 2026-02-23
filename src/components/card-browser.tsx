@@ -1,34 +1,33 @@
 "use client";
 
-import {
-  useState,
-  useMemo,
-  useCallback,
-  useEffect,
-  useRef,
-} from "react";
+import { useMemo, useCallback, useEffect, useRef, useState } from "react";
 import { Search, X, CircleHelp, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { useQueryState, useQueryStates, parseAsString, parseAsStringLiteral } from "nuqs";
 import { useDebounce } from "@/hooks/use-debounce";
 import { CardGrid } from "@/components/card-grid";
 import { FilterSheet } from "@/components/filter-sheet";
 import { SortMenu } from "@/components/sort-menu";
 import { ElementIcon } from "@/components/icons";
 import { tokenize, matchesTokens, SEARCH_HELP } from "@/lib/search";
-import type { BrowserCard, SetInfo, Filters, SortKey } from "@/lib/types";
-import { ELEMENTS, RARITY_ORDER } from "@/lib/types";
+import type { BrowserCard, SetInfo, SortKey } from "@/lib/types";
+import { ELEMENTS, RARITY_ORDER, SORT_OPTIONS } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const BATCH_SIZE = 42;
+const SORT_KEYS = SORT_OPTIONS.map((o) => o.value);
 
 interface CardBrowserProps {
   cards: BrowserCard[];
   sets: SetInfo[];
 }
 
-// ── UI filter application (separate from search tokens) ──
+// ── Helpers ──
 
-function applyUiFilters(cards: BrowserCard[], filters: Filters): BrowserCard[] {
+function applyUiFilters(
+  cards: BrowserCard[],
+  filters: { type: string; element: string; rarity: string; set: string }
+): BrowserCard[] {
   let result = cards;
   if (filters.type) result = result.filter((c) => c.type === filters.type);
   if (filters.element)
@@ -48,33 +47,52 @@ function sortCards(cards: BrowserCard[], sort: SortKey): BrowserCard[] {
       case "cost-desc":
         return (b.cost ?? -1) - (a.cost ?? -1) || a.name.localeCompare(b.name);
       case "attack":
-        return (
-          (b.attack ?? -1) - (a.attack ?? -1) || a.name.localeCompare(b.name)
-        );
+        return (b.attack ?? -1) - (a.attack ?? -1) || a.name.localeCompare(b.name);
       case "defence":
-        return (
-          (b.defence ?? -1) - (a.defence ?? -1) || a.name.localeCompare(b.name)
-        );
+        return (b.defence ?? -1) - (a.defence ?? -1) || a.name.localeCompare(b.name);
       default:
         return a.name.localeCompare(b.name);
     }
   });
 }
 
+// ── Component ──
+
 export function CardBrowser({ cards, sets }: CardBrowserProps) {
-  const [search, setSearch] = useState("");
-  const [filters, setFilters] = useState<Filters>({
-    type: "",
-    element: "",
-    rarity: "",
-    set: "",
-  });
-  const [sort, setSort] = useState<SortKey>("name");
+  // URL state via nuqs (shallow — no server round-trips)
+  const [q, setQ] = useQueryState(
+    "q",
+    parseAsString.withDefault("").withOptions({
+      shallow: true,
+      throttleMs: 150,
+      clearOnDefault: true,
+    })
+  );
+
+  const [filterState, setFilterState] = useQueryStates(
+    {
+      type: parseAsString.withDefault(""),
+      element: parseAsString.withDefault(""),
+      rarity: parseAsString.withDefault(""),
+      set: parseAsString.withDefault(""),
+    },
+    { shallow: true, clearOnDefault: true }
+  );
+
+  const [sort, setSort] = useQueryState(
+    "sort",
+    parseAsStringLiteral(SORT_KEYS)
+      .withDefault("name")
+      .withOptions({ shallow: true, clearOnDefault: true })
+  );
+
+  // Local UI state
   const [visibleCount, setVisibleCount] = useState(BATCH_SIZE);
   const [showHelp, setShowHelp] = useState(false);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
-  const debouncedSearch = useDebounce(search, 150);
+  // Debounce search for filtering (input stays responsive via nuqs)
+  const debouncedSearch = useDebounce(q, 150);
 
   // Derive filter options
   const types = useMemo(
@@ -88,13 +106,11 @@ export function CardBrowser({ cards, sets }: CardBrowserProps) {
 
   // ── Search + Filter pipeline ──
 
-  // Step 1: Parse search query
   const searchTokens = useMemo(
     () => tokenize(debouncedSearch),
     [debouncedSearch]
   );
 
-  // Step 2: Apply search tokens
   const searchMatched = useMemo(
     () =>
       searchTokens.length === 0
@@ -103,21 +119,19 @@ export function CardBrowser({ cards, sets }: CardBrowserProps) {
     [cards, searchTokens]
   );
 
-  // Step 3: Apply UI filters + sort
   const filtered = useMemo(
-    () => sortCards(applyUiFilters(searchMatched, filters), sort),
-    [searchMatched, filters, sort]
+    () => sortCards(applyUiFilters(searchMatched, filterState), sort),
+    [searchMatched, filterState, sort]
   );
 
-  // ── Faceted counts (cross-filtered) ──
+  // ── Faceted counts ──
 
   const facetCounts = useMemo(() => {
-    const base = searchMatched; // search applied, no UI filters
-
-    const withoutType = applyUiFilters(base, { ...filters, type: "" });
-    const withoutElement = applyUiFilters(base, { ...filters, element: "" });
-    const withoutRarity = applyUiFilters(base, { ...filters, rarity: "" });
-    const withoutSet = applyUiFilters(base, { ...filters, set: "" });
+    const base = searchMatched;
+    const withoutType = applyUiFilters(base, { ...filterState, type: "" });
+    const withoutElement = applyUiFilters(base, { ...filterState, element: "" });
+    const withoutRarity = applyUiFilters(base, { ...filterState, rarity: "" });
+    const withoutSet = applyUiFilters(base, { ...filterState, set: "" });
 
     return {
       types: Object.fromEntries(
@@ -142,20 +156,18 @@ export function CardBrowser({ cards, sets }: CardBrowserProps) {
         ])
       ),
     };
-  }, [searchMatched, filters, types, rarities, sets]);
+  }, [searchMatched, filterState, types, rarities, sets]);
 
   // ── Infinite scroll ──
 
   const visibleCards = filtered.slice(0, visibleCount);
   const hasMore = visibleCount < filtered.length;
 
-  // Reset on filter/search/sort change
   useEffect(() => {
     setVisibleCount(BATCH_SIZE);
     window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
-  }, [debouncedSearch, filters, sort]);
+  }, [debouncedSearch, filterState, sort]);
 
-  // IntersectionObserver for loading more
   useEffect(() => {
     const el = sentinelRef.current;
     if (!el || !hasMore) return;
@@ -175,83 +187,58 @@ export function CardBrowser({ cards, sets }: CardBrowserProps) {
     return () => observer.disconnect();
   }, [hasMore, filtered.length]);
 
-  // ── URL sync ──
-
-  useEffect(() => {
-    const params = new URLSearchParams();
-    if (debouncedSearch) params.set("q", debouncedSearch);
-    if (filters.type) params.set("type", filters.type);
-    if (filters.element) params.set("element", filters.element);
-    if (filters.rarity) params.set("rarity", filters.rarity);
-    if (filters.set) params.set("set", filters.set);
-    if (sort !== "name") params.set("sort", sort);
-    const url = params.toString() ? `/?${params.toString()}` : "/";
-    window.history.replaceState(null, "", url);
-  }, [debouncedSearch, filters, sort]);
-
-  // Read URL on mount
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const q = params.get("q");
-    const type = params.get("type");
-    const element = params.get("element");
-    const rarity = params.get("rarity");
-    const set = params.get("set");
-    const sortParam = params.get("sort") as SortKey | null;
-
-    if (q) setSearch(q);
-    if (type || element || rarity || set) {
-      setFilters({
-        type: type || "",
-        element: element || "",
-        rarity: rarity || "",
-        set: set || "",
-      });
-    }
-    if (sortParam) setSort(sortParam);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   // ── Filter handlers ──
 
-  const toggleFilter = useCallback((key: keyof Filters, value: string) => {
-    setFilters((prev) => ({
-      ...prev,
-      [key]: prev[key] === value ? "" : value,
-    }));
-  }, []);
+  const toggleFilter = useCallback(
+    (key: keyof typeof filterState, value: string) => {
+      setFilterState((prev) => ({
+        [key]: prev[key] === value ? null : value,
+      }));
+    },
+    [setFilterState]
+  );
 
   const clearFilters = useCallback(() => {
-    setFilters({ type: "", element: "", rarity: "", set: "" });
-  }, []);
+    setFilterState({ type: null, element: null, rarity: null, set: null });
+  }, [setFilterState]);
 
-  const removeFilter = useCallback((key: keyof Filters) => {
-    setFilters((prev) => ({ ...prev, [key]: "" }));
-  }, []);
+  const removeFilter = useCallback(
+    (key: keyof typeof filterState) => {
+      setFilterState({ [key]: null });
+    },
+    [setFilterState]
+  );
 
-  const activeFilterCount = Object.values(filters).filter(Boolean).length;
+  const activeFilterCount = Object.values(filterState).filter(Boolean).length;
 
   // Active chip list
-  const activeChips: { key: keyof Filters; label: string; value: string }[] =
-    [];
-  if (filters.element)
+  const activeChips: {
+    key: keyof typeof filterState;
+    label: string;
+    value: string;
+  }[] = [];
+  if (filterState.element)
     activeChips.push({
       key: "element",
-      label: filters.element,
-      value: filters.element,
+      label: filterState.element,
+      value: filterState.element,
     });
-  if (filters.type)
-    activeChips.push({ key: "type", label: filters.type, value: filters.type });
-  if (filters.rarity)
+  if (filterState.type)
+    activeChips.push({
+      key: "type",
+      label: filterState.type,
+      value: filterState.type,
+    });
+  if (filterState.rarity)
     activeChips.push({
       key: "rarity",
-      label: filters.rarity,
-      value: filters.rarity,
+      label: filterState.rarity,
+      value: filterState.rarity,
     });
-  if (filters.set) {
+  if (filterState.set) {
     const setName =
-      sets.find((s) => s.slug === filters.set)?.name || filters.set;
-    activeChips.push({ key: "set", label: setName, value: filters.set });
+      sets.find((s) => s.slug === filterState.set)?.name || filterState.set;
+    activeChips.push({ key: "set", label: setName, value: filterState.set });
   }
 
   return (
@@ -263,13 +250,13 @@ export function CardBrowser({ cards, sets }: CardBrowserProps) {
           <Input
             type="search"
             placeholder='Search cards... (try type:minion e:fire c:>3)'
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            value={q}
+            onChange={(e) => setQ(e.target.value || null)}
             className="pl-9 pr-16 h-9"
           />
           <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-            {search && (
-              <button onClick={() => setSearch("")}>
+            {q && (
+              <button onClick={() => setQ(null)}>
                 <X className="h-4 w-4 text-muted-foreground hover:text-foreground transition-colors" />
               </button>
             )}
@@ -291,7 +278,7 @@ export function CardBrowser({ cards, sets }: CardBrowserProps) {
           types={types}
           rarities={rarities}
           sets={sets}
-          filters={filters}
+          filters={filterState}
           onToggle={toggleFilter}
           onClear={clearFilters}
           activeCount={activeFilterCount}
@@ -347,12 +334,7 @@ export function CardBrowser({ cards, sets }: CardBrowserProps) {
       {/* Result count */}
       <p className="text-xs text-muted-foreground">
         {filtered.length} card{filtered.length !== 1 ? "s" : ""}
-        {hasMore && (
-          <span>
-            {" "}
-            · showing {visibleCount}
-          </span>
-        )}
+        {hasMore && <span> · showing {visibleCount}</span>}
       </p>
 
       {/* Card grid */}
@@ -360,10 +342,7 @@ export function CardBrowser({ cards, sets }: CardBrowserProps) {
 
       {/* Infinite scroll sentinel */}
       {hasMore && (
-        <div
-          ref={sentinelRef}
-          className="flex justify-center py-8"
-        >
+        <div ref={sentinelRef} className="flex justify-center py-8">
           <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
         </div>
       )}
