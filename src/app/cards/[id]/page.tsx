@@ -60,7 +60,7 @@ async function CardDetailContent({ id }: { id: string }) {
     id: cs.id,
     setName: cs.set.name,
     setSlug: cs.set.slug,
-    releasedAt: cs.set.releasedAt?.toISOString() ?? null,
+    releasedAt: cs.set.releasedAt ? String(cs.set.releasedAt) : null,
     rarity: cs.rarity,
     type: cs.type,
     rulesText: cs.rulesText,
@@ -92,7 +92,7 @@ async function CardDetailContent({ id }: { id: string }) {
         const byDate = new Map<string, number>();
         for (const snap of [...tp.priceSnapshots].reverse()) {
           if (snap.marketPrice != null) {
-            const date = snap.recordedAt.toISOString().slice(0, 10);
+            const date = String(snap.recordedAt).slice(0, 10);
             byDate.set(date, snap.marketPrice);
           }
         }
