@@ -1,98 +1,91 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useTransition } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface PaginationProps {
   currentPage: number;
   totalPages: number;
+  onPageChange: (page: number) => void;
 }
 
-export function Pagination({ currentPage, totalPages }: PaginationProps) {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const [isPending, startTransition] = useTransition();
-
-  const goToPage = useCallback(
-    (page: number) => {
-      const params = new URLSearchParams(searchParams.toString());
-      if (page <= 1) {
-        params.delete("page");
-      } else {
-        params.set("page", String(page));
-      }
-      startTransition(() => {
-        router.push(`/?${params.toString()}`);
-      });
-    },
-    [router, searchParams]
-  );
-
-  // Show a window of pages around current
+export function Pagination({
+  currentPage,
+  totalPages,
+  onPageChange,
+}: PaginationProps) {
   const pages: number[] = [];
   const start = Math.max(1, currentPage - 2);
   const end = Math.min(totalPages, currentPage + 2);
   for (let i = start; i <= end; i++) pages.push(i);
 
   return (
-    <nav
-      className={`flex items-center justify-center gap-2 mt-8 ${isPending ? "opacity-50" : ""}`}
-    >
+    <nav className="flex items-center justify-center gap-1.5 mt-8">
       <button
-        onClick={() => goToPage(currentPage - 1)}
+        onClick={() => onPageChange(currentPage - 1)}
         disabled={currentPage <= 1}
-        className="px-3 py-2 text-sm rounded-md border disabled:opacity-30 hover:bg-accent transition-colors"
+        className="p-2 rounded-md border disabled:opacity-20 hover:bg-accent transition-colors"
       >
-        ←
+        <ChevronLeft className="h-4 w-4" />
       </button>
 
       {start > 1 && (
         <>
-          <button
-            onClick={() => goToPage(1)}
-            className="px-3 py-2 text-sm rounded-md border hover:bg-accent transition-colors"
-          >
-            1
-          </button>
-          {start > 2 && <span className="text-muted-foreground">…</span>}
+          <PageBtn page={1} current={currentPage} onClick={onPageChange} />
+          {start > 2 && (
+            <span className="px-1 text-muted-foreground text-sm">…</span>
+          )}
         </>
       )}
 
       {pages.map((p) => (
-        <button
-          key={p}
-          onClick={() => goToPage(p)}
-          className={`px-3 py-2 text-sm rounded-md border transition-colors ${
-            p === currentPage
-              ? "bg-primary text-primary-foreground"
-              : "hover:bg-accent"
-          }`}
-        >
-          {p}
-        </button>
+        <PageBtn key={p} page={p} current={currentPage} onClick={onPageChange} />
       ))}
 
       {end < totalPages && (
         <>
           {end < totalPages - 1 && (
-            <span className="text-muted-foreground">…</span>
+            <span className="px-1 text-muted-foreground text-sm">…</span>
           )}
-          <button
-            onClick={() => goToPage(totalPages)}
-            className="px-3 py-2 text-sm rounded-md border hover:bg-accent transition-colors"
-          >
-            {totalPages}
-          </button>
+          <PageBtn
+            page={totalPages}
+            current={currentPage}
+            onClick={onPageChange}
+          />
         </>
       )}
 
       <button
-        onClick={() => goToPage(currentPage + 1)}
+        onClick={() => onPageChange(currentPage + 1)}
         disabled={currentPage >= totalPages}
-        className="px-3 py-2 text-sm rounded-md border disabled:opacity-30 hover:bg-accent transition-colors"
+        className="p-2 rounded-md border disabled:opacity-20 hover:bg-accent transition-colors"
       >
-        →
+        <ChevronRight className="h-4 w-4" />
       </button>
     </nav>
+  );
+}
+
+function PageBtn({
+  page,
+  current,
+  onClick,
+}: {
+  page: number;
+  current: number;
+  onClick: (p: number) => void;
+}) {
+  return (
+    <button
+      onClick={() => onClick(page)}
+      className={cn(
+        "min-w-8 h-8 text-sm rounded-md border transition-colors",
+        page === current
+          ? "bg-primary text-primary-foreground font-medium"
+          : "hover:bg-accent"
+      )}
+    >
+      {page}
+    </button>
   );
 }

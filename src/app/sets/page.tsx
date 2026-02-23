@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
+import { ChevronLeft } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default async function SetsPage() {
@@ -13,9 +14,10 @@ export default async function SetsPage() {
     <main className="container mx-auto px-4 py-8 max-w-5xl">
       <Link
         href="/"
-        className="text-sm text-muted-foreground hover:text-foreground transition-colors mb-6 inline-block"
+        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6"
       >
-        ← All cards
+        <ChevronLeft className="h-4 w-4" />
+        All cards
       </Link>
 
       <h1 className="text-3xl font-bold tracking-tight font-serif text-amber-100 mb-8">

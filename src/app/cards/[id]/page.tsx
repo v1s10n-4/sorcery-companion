@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import Link from "next/link";
 import { CardImage } from "@/components/card-image";
 import { ElementBadges, StatIcon, Thresholds } from "@/components/icons";
+import { ChevronLeft, Paintbrush } from "lucide-react";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -39,16 +40,17 @@ export default async function CardDetailPage({ params }: PageProps) {
   if (!card) notFound();
 
   return (
-    <main className="container mx-auto px-4 py-8 max-w-4xl">
+    <main className="container mx-auto px-4 py-6 max-w-4xl">
       <Link
         href="/"
-        className="text-sm text-muted-foreground hover:text-foreground transition-colors mb-6 inline-block"
+        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6"
       >
-        ← Back to cards
+        <ChevronLeft className="h-4 w-4" />
+        Back to cards
       </Link>
 
       <div className="grid grid-cols-1 md:grid-cols-[300px_1fr] gap-8">
-        {/* Card Image — show first variant, allow browsing */}
+        {/* Card Image */}
         <div className="space-y-3">
           {card.variants[0] && (
             <CardImage
@@ -59,7 +61,6 @@ export default async function CardDetailPage({ params }: PageProps) {
             />
           )}
 
-          {/* Variant thumbnails */}
           {card.variants.length > 1 && (
             <div className="grid grid-cols-4 gap-2">
               {card.variants.slice(0, 8).map((v) => (
@@ -85,7 +86,10 @@ export default async function CardDetailPage({ params }: PageProps) {
           <div className="flex flex-wrap gap-2 mb-4">
             <Badge variant="secondary">{card.type}</Badge>
             {card.rarity && (
-              <Badge variant="outline" className={RARITY_COLORS[card.rarity] || ""}>
+              <Badge
+                variant="outline"
+                className={RARITY_COLORS[card.rarity] || ""}
+              >
                 {card.rarity}
               </Badge>
             )}
@@ -104,30 +108,36 @@ export default async function CardDetailPage({ params }: PageProps) {
           )}
 
           {/* Stats */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
             {card.cost !== null && (
-              <div className="flex items-center gap-2 bg-card rounded-lg p-3 border border-border/50">
-                <span className="text-xs text-muted-foreground uppercase">Cost</span>
-                <span className="font-bold text-amber-200 ml-auto text-lg">{card.cost}</span>
-              </div>
+              <StatCard label="Cost">
+                <StatIcon stat="cost" size="md" />
+                <span className="font-bold text-amber-200 ml-auto text-lg">
+                  {card.cost}
+                </span>
+              </StatCard>
             )}
             {card.attack !== null && (
-              <div className="flex items-center gap-2 bg-card rounded-lg p-3 border border-border/50">
+              <StatCard label="Attack">
                 <StatIcon stat="attack" size="md" />
                 <span className="font-bold ml-auto text-lg">{card.attack}</span>
-              </div>
+              </StatCard>
             )}
             {card.defence !== null && (
-              <div className="flex items-center gap-2 bg-card rounded-lg p-3 border border-border/50">
+              <StatCard label="Defence">
                 <StatIcon stat="defence" size="md" />
-                <span className="font-bold ml-auto text-lg">{card.defence}</span>
-              </div>
+                <span className="font-bold ml-auto text-lg">
+                  {card.defence}
+                </span>
+              </StatCard>
             )}
             {card.life !== null && (
-              <div className="flex items-center gap-2 bg-card rounded-lg p-3 border border-border/50">
-                <span className="text-xs text-muted-foreground uppercase">Life</span>
-                <span className="font-bold text-red-400 ml-auto text-lg">{card.life}</span>
-              </div>
+              <StatCard label="Life">
+                <StatIcon stat="life" size="md" />
+                <span className="font-bold text-rose-400 ml-auto text-lg">
+                  {card.life}
+                </span>
+              </StatCard>
             )}
           </div>
 
@@ -179,18 +189,13 @@ export default async function CardDetailPage({ params }: PageProps) {
                 <Card key={cs.id} className="border-border/50">
                   <CardHeader className="py-3">
                     <CardTitle className="text-sm font-serif">
-                      <Link
-                        href={`/sets/${cs.set.slug}`}
-                        className="hover:text-amber-200 transition-colors"
-                      >
-                        {cs.set.name}
-                      </Link>
+                      {cs.set.name}
                       {cs.set.releasedAt && (
                         <span className="text-xs text-muted-foreground ml-2 font-sans">
-                          {new Date(cs.set.releasedAt).toLocaleDateString("en-US", {
-                            month: "short",
-                            year: "numeric",
-                          })}
+                          {new Date(cs.set.releasedAt).toLocaleDateString(
+                            "en-US",
+                            { month: "short", year: "numeric" }
+                          )}
                         </span>
                       )}
                     </CardTitle>
@@ -202,11 +207,17 @@ export default async function CardDetailPage({ params }: PageProps) {
                           <Badge variant="outline" className="text-[10px]">
                             {v.finish}
                           </Badge>
-                          <Badge variant="outline" className="text-[10px] ml-1">
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] ml-1"
+                          >
                             {v.product.replace(/_/g, " ")}
                           </Badge>
                           {v.artist && (
-                            <p className="text-muted-foreground">🎨 {v.artist}</p>
+                            <p className="flex items-center gap-1 text-muted-foreground">
+                              <Paintbrush className="h-3 w-3" />
+                              {v.artist}
+                            </p>
                           )}
                           {v.flavorText && (
                             <p className="italic text-muted-foreground">
@@ -224,5 +235,20 @@ export default async function CardDetailPage({ params }: PageProps) {
         </div>
       </div>
     </main>
+  );
+}
+
+function StatCard({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center gap-2 bg-card rounded-lg p-3 border border-border/50">
+      {children}
+      <span className="sr-only">{label}</span>
+    </div>
   );
 }
