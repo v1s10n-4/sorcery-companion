@@ -200,3 +200,126 @@ export async function searchCardsForDeck(
     slug: c.variants[0]?.slug ?? "",
   }));
 }
+
+// ── Batch operations ──
+
+export interface BatchDeckItem {
+  cardId: string;
+  quantity: number;
+  section?: "avatar" | "atlas" | "spellbook" | "collection"; // auto-detect if not provided
+}
+
+/** Add multiple cards to a deck in one batch */
+export async function batchAddToDeck(deckId: string, items: BatchDeckItem[]) {
+  if (items.length === 0) return { success: true, added: 0 };
+
+  const user = await requireUser();
+  const deck = await prisma.deck.findUnique({
+    where: { id: deckId },
+    include: { cards: { include: { card: true } } },
+  });
+  if (!deck || deck.userId !== user.id) throw new Error("Not found");
+
+  // Fetch all cards at once
+  const cardIds = [...new Set(items.map((i) => i.cardId))];
+  const cards = await prisma.card.findMany({
+    where: { id: { in: cardIds } },
+  });
+  const cardMap = new Map(cards.map((c) => [c.id, c]));
+
+  // Build current deck state
+  const deckState = new Map<string, { id: string; quantity: number; section: string }>();
+  for (const dc of deck.cards) {
+    deckState.set(`${dc.cardId}-${dc.section}`, {
+      id: dc.id,
+      quantity: dc.quantity,
+      section: dc.section,
+    });
+  }
+
+  // Track section totals
+  const sectionTotals: Record<string, number> = {};
+  for (const dc of deck.cards) {
+    sectionTotals[dc.section] = (sectionTotals[dc.section] ?? 0) + dc.quantity;
+  }
+
+  let added = 0;
+  const operations: Promise<unknown>[] = [];
+
+  for (const item of items) {
+    const card = cardMap.get(item.cardId);
+    if (!card) continue;
+
+    // Auto-detect section from card type if not provided
+    const section = item.section ??
+      (card.type === "Avatar" ? "avatar" :
+       card.type === "Site" ? "atlas" : "spellbook");
+
+    // Validate type/section match
+    if (section === "avatar" && card.type !== "Avatar") continue;
+    if (section === "atlas" && card.type !== "Site") continue;
+    if (section === "spellbook" && (card.type === "Avatar" || card.type === "Site")) continue;
+    if (section === "collection" && card.type === "Avatar") continue;
+
+    // Section size check
+    const currentTotal = sectionTotals[section] ?? 0;
+    const maxSize = section === "atlas" ? ATLAS_SIZE
+      : section === "spellbook" ? SPELLBOOK_SIZE
+      : section === "collection" ? COLLECTION_SIZE
+      : 1;
+
+    const key = `${item.cardId}-${section}`;
+    const existing = deckState.get(key);
+    const currentQty = existing?.quantity ?? 0;
+
+    // Rarity limit
+    const rarity = card.rarity?.toLowerCase() ?? "ordinary";
+    const maxCopies = RARITY_LIMITS[rarity] ?? 4;
+    const canAdd = Math.min(
+      item.quantity,
+      maxCopies - currentQty,
+      maxSize - currentTotal
+    );
+    if (canAdd <= 0) continue;
+
+    // Avatar: replace
+    if (section === "avatar") {
+      const existingAvatar = deck.cards.find((c) => c.section === "avatar");
+      if (existingAvatar && existingAvatar.cardId !== item.cardId) {
+        operations.push(prisma.deckCard.delete({ where: { id: existingAvatar.id } }));
+      }
+      if (existing) {
+        // Already this avatar, skip
+        continue;
+      }
+      operations.push(prisma.deckCard.create({
+        data: { deckId, cardId: item.cardId, section, quantity: 1 },
+      }));
+      added += 1;
+      continue;
+    }
+
+    if (existing) {
+      operations.push(
+        prisma.deckCard.update({
+          where: { id: existing.id },
+          data: { quantity: existing.quantity + canAdd },
+        })
+      );
+      existing.quantity += canAdd;
+    } else {
+      operations.push(
+        prisma.deckCard.create({
+          data: { deckId, cardId: item.cardId, section, quantity: canAdd },
+        })
+      );
+      deckState.set(key, { id: "pending", quantity: canAdd, section });
+    }
+    sectionTotals[section] = currentTotal + canAdd;
+    added += canAdd;
+  }
+
+  await Promise.all(operations);
+  revalidatePath(`/decks/${deckId}`);
+  return { success: true, added };
+}

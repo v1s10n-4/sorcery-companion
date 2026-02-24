@@ -26,7 +26,7 @@ import {
   Minus,
   Plus,
   Trash2,
-  ChevronDown,
+  Library,
 } from "lucide-react";
 import type { BrowserCard } from "@/lib/types";
 import type { BrowserContext } from "@/components/card-browser";
@@ -40,12 +40,6 @@ interface VariantInfo {
   artist: string | null;
   setName: string;
   marketPrice: number | null;
-}
-
-export interface SelectionItem {
-  cardId: string;
-  quantity: number;
-  variantId?: string; // selected variant override
 }
 
 interface SelectionActionBarProps {
@@ -73,9 +67,7 @@ export function SelectionActionBar({
   const [targetDeckId, setTargetDeckId] = useState<string>(deckId ?? "");
   const [isPending, startTransition] = useTransition();
   const [success, setSuccess] = useState<string | null>(null);
-  // Per-card variant overrides: cardId → variantId
   const [variantOverrides, setVariantOverrides] = useState<Map<string, string>>(new Map());
-  // Cached variant data: cardId → VariantInfo[]
   const [variantCache, setVariantCache] = useState<Map<string, VariantInfo[]>>(new Map());
   const [loadingVariants, setLoadingVariants] = useState<Set<string>>(new Set());
 
@@ -84,72 +76,47 @@ export function SelectionActionBar({
 
   const showSuccess = (msg: string) => {
     setSuccess(msg);
-    setTimeout(() => { setSuccess(null); onClear(); }, 1500);
+    setTimeout(() => { setSuccess(null); onClear(); }, 1200);
   };
 
-  // Fetch variants for cards when drawer opens
+  // Lazy fetch variants when drawer opens
   useEffect(() => {
     if (!drawerOpen) return;
     const toFetch = [...selection.keys()].filter((id) => !variantCache.has(id) && !loadingVariants.has(id));
     if (toFetch.length === 0) return;
 
-    setLoadingVariants((prev) => {
-      const next = new Set(prev);
-      toFetch.forEach((id) => next.add(id));
-      return next;
-    });
+    setLoadingVariants((prev) => { const next = new Set(prev); toFetch.forEach((id) => next.add(id)); return next; });
 
     (async () => {
       const { getCardVariants } = await import("@/lib/actions/collection");
-      const results = await Promise.all(
-        toFetch.map(async (cardId) => {
-          const variants = await getCardVariants(cardId);
-          return { cardId, variants };
-        })
-      );
-      setVariantCache((prev) => {
-        const next = new Map(prev);
-        results.forEach(({ cardId, variants }) => next.set(cardId, variants));
-        return next;
-      });
-      setLoadingVariants((prev) => {
-        const next = new Set(prev);
-        toFetch.forEach((id) => next.delete(id));
-        return next;
-      });
+      const results = await Promise.all(toFetch.map(async (cardId) => ({ cardId, variants: await getCardVariants(cardId) })));
+      setVariantCache((prev) => { const next = new Map(prev); results.forEach(({ cardId, variants }) => next.set(cardId, variants)); return next; });
+      setLoadingVariants((prev) => { const next = new Set(prev); toFetch.forEach((id) => next.delete(id)); return next; });
     })();
   }, [drawerOpen, selection, variantCache, loadingVariants]);
 
+  // Build batch items from selection
+  const buildItems = () =>
+    [...selection.entries()].map(([cardId, quantity]) => ({
+      cardId,
+      quantity,
+      variantId: variantOverrides.get(cardId),
+    }));
+
   const handleAddToCollection = () => {
     startTransition(async () => {
-      const { addToCollection, addToCollectionByCard } = await import("@/lib/actions/collection");
-      let added = 0;
-      for (const [cardId, qty] of selection) {
-        try {
-          const variantId = variantOverrides.get(cardId);
-          if (variantId) {
-            await addToCollection({ variantId, quantity: qty });
-          } else {
-            for (let i = 0; i < qty; i++) await addToCollectionByCard(cardId);
-          }
-          added += qty;
-        } catch {}
-      }
-      showSuccess(`+${added} to collection`);
+      const { batchAddToCollection } = await import("@/lib/actions/collection");
+      const result = await batchAddToCollection(buildItems());
+      showSuccess(`+${result.added} to collection`);
     });
   };
 
   const handleRemoveFromCollection = () => {
     startTransition(async () => {
-      const { removeFromCollectionByCardId } = await import("@/lib/actions/collection");
-      let removed = 0;
-      for (const [cardId, qty] of selection) {
-        try {
-          await removeFromCollectionByCardId(cardId, qty);
-          removed += qty;
-        } catch {}
-      }
-      showSuccess(`−${removed} from collection`);
+      const { batchRemoveFromCollection } = await import("@/lib/actions/collection");
+      const items = [...selection.entries()].map(([cardId, quantity]) => ({ cardId, quantity }));
+      const result = await batchRemoveFromCollection(items);
+      showSuccess(`−${result.removed} from collection`);
     });
   };
 
@@ -157,30 +124,41 @@ export function SelectionActionBar({
     const dId = targetDeckId;
     if (!dId) return;
     startTransition(async () => {
-      const { addCardToDeck } = await import("@/lib/actions/deck");
-      let added = 0;
-      for (const [cardId, qty] of selection) {
+      const { batchAddToDeck } = await import("@/lib/actions/deck");
+      const items = [...selection.entries()].map(([cardId, quantity]) => {
         const card = cards.find((c) => c.id === cardId);
-        if (!card) continue;
-        const section = card.type === "Avatar" ? "avatar" : card.type === "Site" ? "atlas" : "spellbook";
-        try {
-          for (let i = 0; i < qty; i++) await addCardToDeck(dId, cardId, section);
-          added += qty;
-        } catch {}
-      }
-      showSuccess(`+${added} to deck`);
+        const section = card?.type === "Avatar" ? "avatar" as const
+          : card?.type === "Site" ? "atlas" as const
+          : "spellbook" as const;
+        return { cardId, quantity, section };
+      });
+      const result = await batchAddToDeck(dId, items);
+      showSuccess(`+${result.added} to deck`);
     });
   };
 
-  // Selected cards for the drawer list
-  const selectedCards = [...selection.entries()].map(([cardId, qty]) => {
-    const card = cards.find((c) => c.id === cardId);
-    return { cardId, qty, card };
-  }).filter((x) => x.card);
+  const handleAddToDeckCollection = () => {
+    const dId = targetDeckId;
+    if (!dId) return;
+    startTransition(async () => {
+      const { batchAddToDeck } = await import("@/lib/actions/deck");
+      const items = [...selection.entries()].map(([cardId, quantity]) => ({
+        cardId,
+        quantity,
+        section: "collection" as const,
+      }));
+      const result = await batchAddToDeck(dId, items);
+      showSuccess(`+${result.added} to deck collection`);
+    });
+  };
+
+  const selectedCards = [...selection.entries()]
+    .map(([cardId, qty]) => ({ cardId, qty, card: cards.find((c) => c.id === cardId) }))
+    .filter((x) => x.card);
 
   return (
     <>
-      {/* ── Compact floating bar ── */}
+      {/* ── Compact floating pill ── */}
       <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-4 fade-in duration-200">
         <div className="bg-card/95 backdrop-blur-md border border-border rounded-full shadow-2xl px-3 py-2 flex items-center gap-2">
           {success ? (
@@ -190,7 +168,7 @@ export function SelectionActionBar({
             </div>
           ) : (
             <>
-              {/* Drawer toggle with count */}
+              {/* Drawer toggle */}
               <button
                 onClick={() => setDrawerOpen(true)}
                 className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-amber-500/20 text-amber-200 text-sm font-medium cursor-pointer hover:bg-amber-500/30 transition-colors"
@@ -201,32 +179,27 @@ export function SelectionActionBar({
 
               <div className="h-4 w-px bg-border" />
 
-              {/* Collection action — add when browsing, remove when on collection page */}
+              {/* Context-aware actions */}
               {context === "browse" && (
-                <Tooltip label="Add to collection">
-                  <button
-                    onClick={handleAddToCollection}
-                    disabled={isPending}
-                    className="p-2 rounded-full hover:bg-muted transition-colors cursor-pointer disabled:opacity-50"
-                  >
+                <Tip label="Add to collection">
+                  <button onClick={handleAddToCollection} disabled={isPending}
+                    className="p-2 rounded-full hover:bg-muted transition-colors cursor-pointer disabled:opacity-50">
                     {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <FolderPlus className="h-4 w-4" />}
                   </button>
-                </Tooltip>
-              )}
-              {context === "collection" && (
-                <Tooltip label="Remove from collection">
-                  <button
-                    onClick={handleRemoveFromCollection}
-                    disabled={isPending}
-                    className="p-2 rounded-full hover:bg-muted transition-colors cursor-pointer disabled:opacity-50 text-red-400"
-                  >
-                    {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                  </button>
-                </Tooltip>
+                </Tip>
               )}
 
-              {/* Deck action */}
-              {(context === "browse" || context === "collection" || context === "deck") && userDecks.length > 0 && (
+              {context === "collection" && (
+                <Tip label="Remove from collection">
+                  <button onClick={handleRemoveFromCollection} disabled={isPending}
+                    className="p-2 rounded-full hover:bg-muted transition-colors cursor-pointer disabled:opacity-50 text-red-400">
+                    {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                  </button>
+                </Tip>
+              )}
+
+              {/* Deck actions — available in all contexts */}
+              {userDecks.length > 0 && (
                 <>
                   {!deckId && (
                     <Select value={targetDeckId} onValueChange={setTargetDeckId}>
@@ -240,21 +213,23 @@ export function SelectionActionBar({
                       </SelectContent>
                     </Select>
                   )}
-                  <Tooltip label="Add to deck">
-                    <button
-                      onClick={handleAddToDeck}
-                      disabled={isPending || !targetDeckId}
-                      className="p-2 rounded-full hover:bg-muted transition-colors cursor-pointer disabled:opacity-50"
-                    >
+                  <Tip label="Add to deck spellbook">
+                    <button onClick={handleAddToDeck} disabled={isPending || !targetDeckId}
+                      className="p-2 rounded-full hover:bg-muted transition-colors cursor-pointer disabled:opacity-50">
                       <BookmarkPlus className="h-4 w-4" />
                     </button>
-                  </Tooltip>
+                  </Tip>
+                  <Tip label="Add to deck collection (sideboard)">
+                    <button onClick={handleAddToDeckCollection} disabled={isPending || !targetDeckId}
+                      className="p-2 rounded-full hover:bg-muted transition-colors cursor-pointer disabled:opacity-50">
+                      <Library className="h-4 w-4" />
+                    </button>
+                  </Tip>
                 </>
               )}
 
               <div className="h-4 w-px bg-border" />
 
-              {/* Clear */}
               <button onClick={onClear} className="p-1.5 rounded-full hover:bg-muted transition-colors cursor-pointer">
                 <X className="h-3.5 w-3.5 text-muted-foreground" />
               </button>
@@ -263,12 +238,12 @@ export function SelectionActionBar({
         </div>
       </div>
 
-      {/* ── Bottom drawer for editing selection ── */}
+      {/* ── Bottom drawer ── */}
       <Sheet open={drawerOpen} onOpenChange={setDrawerOpen}>
         <SheetContent side="bottom" className="max-h-[70vh] flex flex-col rounded-t-xl">
           <SheetHeader className="shrink-0 pb-3 border-b border-border">
-            <SheetTitle className="flex items-center justify-between">
-              <span>Selection ({totalCards} card{totalCards !== 1 ? "s" : ""})</span>
+            <SheetTitle>
+              Selection ({uniqueCards} card{uniqueCards !== 1 ? "s" : ""}, {totalCards} total)
             </SheetTitle>
           </SheetHeader>
 
@@ -280,21 +255,13 @@ export function SelectionActionBar({
 
               return (
                 <div key={cardId} className="flex items-start gap-3 p-2 rounded-lg border border-border/40 bg-card">
-                  <CardImage
-                    slug={card!.variantSlug!}
-                    name={card!.name}
-                    width={48}
-                    height={67}
-                    className="rounded-sm shrink-0"
-                  />
+                  <CardImage slug={card!.variantSlug!} name={card!.name} width={48} height={67} className="rounded-sm shrink-0" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">{card!.name}</p>
                     <p className="text-[10px] text-muted-foreground">{card!.type} · {card!.rarity ?? "—"}</p>
-
-                    {/* Variant picker */}
                     {isLoading ? (
                       <div className="flex items-center gap-1 mt-1 text-[10px] text-muted-foreground">
-                        <Loader2 className="h-3 w-3 animate-spin" /> Loading variants...
+                        <Loader2 className="h-3 w-3 animate-spin" /> Loading...
                       </div>
                     ) : variants && variants.length > 1 ? (
                       <Select
@@ -302,8 +269,7 @@ export function SelectionActionBar({
                         onValueChange={(v) => {
                           setVariantOverrides((prev) => {
                             const next = new Map(prev);
-                            if (v === "default") next.delete(cardId);
-                            else next.set(cardId, v);
+                            if (v === "default") next.delete(cardId); else next.set(cardId, v);
                             return next;
                           });
                         }}
@@ -315,7 +281,7 @@ export function SelectionActionBar({
                           <SelectItem value="default" className="text-xs">Default (Standard)</SelectItem>
                           {variants.map((v) => (
                             <SelectItem key={v.id} value={v.id} className="text-xs">
-                              {v.setName} · {v.finish} · {v.product.replace(/_/g, " ")}
+                              {v.setName} · {v.finish}
                               {v.marketPrice != null && ` · $${v.marketPrice.toFixed(2)}`}
                             </SelectItem>
                           ))}
@@ -323,14 +289,9 @@ export function SelectionActionBar({
                       </Select>
                     ) : null}
                   </div>
-
-                  {/* Quantity controls */}
                   <div className="flex items-center gap-1 shrink-0">
                     <button
-                      onClick={() => {
-                        if (qty <= 1 && onRemoveCard) onRemoveCard(cardId);
-                        else if (onUpdateQty) onUpdateQty(cardId, qty - 1);
-                      }}
+                      onClick={() => qty <= 1 && onRemoveCard ? onRemoveCard(cardId) : onUpdateQty?.(cardId, qty - 1)}
                       className="h-7 w-7 rounded border border-border flex items-center justify-center hover:bg-muted transition-colors cursor-pointer"
                     >
                       {qty <= 1 ? <Trash2 className="h-3 w-3 text-red-400" /> : <Minus className="h-3 w-3" />}
@@ -349,48 +310,33 @@ export function SelectionActionBar({
           </div>
 
           {/* Drawer actions */}
-          <div className="shrink-0 pt-3 border-t border-border flex gap-2">
+          <div className="shrink-0 pt-3 border-t border-border flex flex-wrap gap-2">
             {context === "browse" && (
-              <Button
-                size="sm"
-                className="flex-1 gap-1.5"
-                onClick={() => { setDrawerOpen(false); handleAddToCollection(); }}
-                disabled={isPending}
-              >
-                <FolderPlus className="h-3.5 w-3.5" />
-                Add to Collection
+              <Button size="sm" className="flex-1 gap-1.5"
+                onClick={() => { setDrawerOpen(false); handleAddToCollection(); }} disabled={isPending}>
+                <FolderPlus className="h-3.5 w-3.5" /> Collection
               </Button>
             )}
             {context === "collection" && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="flex-1 gap-1.5 text-red-400 hover:text-red-300"
-                onClick={() => { setDrawerOpen(false); handleRemoveFromCollection(); }}
-                disabled={isPending}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                Remove from Collection
+              <Button size="sm" variant="outline" className="flex-1 gap-1.5 text-red-400"
+                onClick={() => { setDrawerOpen(false); handleRemoveFromCollection(); }} disabled={isPending}>
+                <Trash2 className="h-3.5 w-3.5" /> Remove
               </Button>
             )}
-            {(context === "browse" || context === "collection" || context === "deck") && targetDeckId && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="flex-1 gap-1.5"
-                onClick={() => { setDrawerOpen(false); handleAddToDeck(); }}
-                disabled={isPending}
-              >
-                <BookmarkPlus className="h-3.5 w-3.5" />
-                Add to Deck
-              </Button>
+            {targetDeckId && (
+              <>
+                <Button size="sm" variant="outline" className="flex-1 gap-1.5"
+                  onClick={() => { setDrawerOpen(false); handleAddToDeck(); }} disabled={isPending}>
+                  <BookmarkPlus className="h-3.5 w-3.5" /> Deck
+                </Button>
+                <Button size="sm" variant="outline" className="flex-1 gap-1.5"
+                  onClick={() => { setDrawerOpen(false); handleAddToDeckCollection(); }} disabled={isPending}>
+                  <Library className="h-3.5 w-3.5" /> Deck Collection
+                </Button>
+              </>
             )}
-            <Button
-              size="sm"
-              variant="ghost"
-              className="gap-1.5 text-red-400 hover:text-red-300"
-              onClick={() => { setDrawerOpen(false); onClear(); }}
-            >
+            <Button size="sm" variant="ghost" className="text-muted-foreground"
+              onClick={() => { setDrawerOpen(false); onClear(); }}>
               Clear
             </Button>
           </div>
@@ -400,8 +346,7 @@ export function SelectionActionBar({
   );
 }
 
-// Simple inline tooltip for icon buttons
-function Tooltip({ label, children }: { label: string; children: React.ReactNode }) {
+function Tip({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="relative group/tip">
       {children}

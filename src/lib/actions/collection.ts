@@ -243,3 +243,163 @@ export async function removeFromCollectionByCardId(cardId: string, quantity: num
   revalidatePath("/collection");
   return { success: true };
 }
+
+// ── Batch operations (single auth check, single revalidate) ──
+
+export interface BatchCollectionItem {
+  cardId: string;
+  quantity: number;
+  variantId?: string; // override variant, otherwise resolves default
+}
+
+/** Add multiple cards to collection in one batch */
+export async function batchAddToCollection(items: BatchCollectionItem[]) {
+  if (items.length === 0) return { success: true, added: 0 };
+
+  const user = await requireUser();
+
+  let collection = await prisma.collection.findFirst({
+    where: { userId: user.id },
+  });
+  if (!collection) {
+    collection = await prisma.collection.create({
+      data: { name: "My Collection", userId: user.id },
+    });
+  }
+
+  // Resolve variants for all cards at once
+  const cardIds = [...new Set(items.map((i) => i.cardId))];
+  const variants = await prisma.cardVariant.findMany({
+    where: { cardId: { in: cardIds } },
+    orderBy: [{ finish: "asc" }, { createdAt: "asc" }],
+    select: {
+      id: true,
+      cardId: true,
+      tcgplayerProducts: {
+        take: 1,
+        select: {
+          priceSnapshots: {
+            orderBy: { recordedAt: "desc" },
+            take: 1,
+            select: { marketPrice: true },
+          },
+        },
+      },
+    },
+  });
+
+  // Build cardId → default variant map
+  const defaultVariantMap = new Map<string, typeof variants[0]>();
+  for (const v of variants) {
+    if (!defaultVariantMap.has(v.cardId)) {
+      defaultVariantMap.set(v.cardId, v);
+    }
+  }
+  // Also build variantId → variant for overrides
+  const variantById = new Map(variants.map((v) => [v.id, v]));
+
+  // Get existing collection cards for upsert
+  const existingCards = await prisma.collectionCard.findMany({
+    where: { collectionId: collection.id, cardId: { in: cardIds } },
+  });
+  const existingMap = new Map(
+    existingCards.map((c) => [`${c.cardId}-${c.variantId}`, c])
+  );
+
+  let added = 0;
+  const operations: Promise<unknown>[] = [];
+
+  for (const item of items) {
+    const resolvedVariant = item.variantId
+      ? variantById.get(item.variantId)
+      : defaultVariantMap.get(item.cardId);
+    if (!resolvedVariant) continue;
+
+    const marketPrice =
+      resolvedVariant.tcgplayerProducts[0]?.priceSnapshots[0]?.marketPrice ?? null;
+    const key = `${item.cardId}-${resolvedVariant.id}`;
+    const existing = existingMap.get(key);
+
+    if (existing) {
+      operations.push(
+        prisma.collectionCard.update({
+          where: { id: existing.id },
+          data: { quantity: existing.quantity + item.quantity },
+        })
+      );
+      // Update map for subsequent items targeting same card
+      existing.quantity += item.quantity;
+    } else {
+      const newCard = {
+        collectionId: collection.id,
+        cardId: item.cardId,
+        variantId: resolvedVariant.id,
+        quantity: item.quantity,
+        condition: "NM",
+        purchasePrice: marketPrice,
+        purchasedAt: new Date(),
+      };
+      operations.push(prisma.collectionCard.create({ data: newCard }));
+      existingMap.set(key, { ...newCard, id: "pending" } as any);
+    }
+    added += item.quantity;
+  }
+
+  await Promise.all(operations);
+  revalidatePath("/collection");
+  return { success: true, added };
+}
+
+/** Remove multiple cards from collection in one batch */
+export async function batchRemoveFromCollection(items: { cardId: string; quantity: number }[]) {
+  if (items.length === 0) return { success: true, removed: 0 };
+
+  const user = await requireUser();
+  const collection = await prisma.collection.findFirst({
+    where: { userId: user.id },
+  });
+  if (!collection) throw new Error("No collection");
+
+  const cardIds = items.map((i) => i.cardId);
+  const collectionCards = await prisma.collectionCard.findMany({
+    where: { collectionId: collection.id, cardId: { in: cardIds } },
+    orderBy: { createdAt: "asc" },
+  });
+
+  // Group by cardId
+  const byCard = new Map<string, typeof collectionCards>();
+  for (const cc of collectionCards) {
+    const arr = byCard.get(cc.cardId) ?? [];
+    arr.push(cc);
+    byCard.set(cc.cardId, arr);
+  }
+
+  let removed = 0;
+  const operations: Promise<unknown>[] = [];
+
+  for (const item of items) {
+    let toRemove = item.quantity;
+    const cards = byCard.get(item.cardId) ?? [];
+    for (const cc of cards) {
+      if (toRemove <= 0) break;
+      if (cc.quantity <= toRemove) {
+        toRemove -= cc.quantity;
+        removed += cc.quantity;
+        operations.push(prisma.collectionCard.delete({ where: { id: cc.id } }));
+      } else {
+        removed += toRemove;
+        operations.push(
+          prisma.collectionCard.update({
+            where: { id: cc.id },
+            data: { quantity: cc.quantity - toRemove },
+          })
+        );
+        toRemove = 0;
+      }
+    }
+  }
+
+  await Promise.all(operations);
+  revalidatePath("/collection");
+  return { success: true, removed };
+}
