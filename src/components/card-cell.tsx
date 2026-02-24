@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 import type { BrowserCard } from "@/lib/types";
 
 const LONG_PRESS_MS = 400;
-const MOVE_THRESHOLD = 8; // px — cancel long-press if pointer moves more than this
+const MOVE_THRESHOLD = 8;
 
 interface OverlayData {
   qty: number;
@@ -42,7 +42,6 @@ export const CardCell = memo(function CardCell({
       longPressTriggered.current = false;
       longPressTimer.current = setTimeout(() => {
         longPressTriggered.current = true;
-        // Haptic feedback
         if (typeof navigator !== "undefined" && navigator.vibrate) {
           navigator.vibrate(50);
         }
@@ -67,12 +66,17 @@ export const CardCell = memo(function CardCell({
     longPressTimer.current = undefined;
   }, []);
 
-  const handleSelectClick = useCallback(
+  // Single click handler on the Link — intercepts in select mode
+  const handleClick = useCallback(
     (e: React.MouseEvent) => {
-      if (!active) return;
-      e.preventDefault();
-      e.stopPropagation();
+      // If long-press just triggered, don't navigate
+      if (longPressTriggered.current) {
+        e.preventDefault();
+        return;
+      }
+      if (!active) return; // let Link navigate normally
 
+      e.preventDefault();
       const rect = e.currentTarget.getBoundingClientRect();
       const y = e.clientY - rect.top;
       if (y < rect.height / 2) {
@@ -109,64 +113,6 @@ export const CardCell = memo(function CardCell({
       ? overlayData.market - overlayData.cost
       : null;
 
-  const imageContent = (
-    <div
-      className={cn(
-        "relative overflow-hidden rounded-lg bg-muted/30",
-        selectedQty > 0 && "ring-2 ring-amber-500"
-      )}
-    >
-      {card.variantSlug ? (
-        <CardImage
-          slug={card.variantSlug}
-          name={card.name}
-          width={260}
-          height={364}
-          blurDataUrl={card.blurDataUrl}
-          className={cn(
-            "w-full h-auto",
-            !active && "transition-transform duration-200 group-hover:scale-105",
-            hasOverlay && !overlayData && "opacity-40"
-          )}
-        />
-      ) : (
-        <div className="aspect-[5/7] flex items-center justify-center text-xs text-muted-foreground">
-          No image
-        </div>
-      )}
-
-      {/* Top/bottom half indicators (select mode only, desktop) */}
-      {active && (
-        <div className="absolute inset-0 flex flex-col pointer-events-none">
-          <div className="flex-1 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-            <span className="bg-green-500/70 text-white text-[10px] font-bold px-2 py-0.5 rounded">
-              +1
-            </span>
-          </div>
-          <div className="flex-1 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-            <span className="bg-red-500/70 text-white text-[10px] font-bold px-2 py-0.5 rounded">
-              −1
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* Collection overlay badges */}
-      {overlayData && (
-        <>
-          <div className="absolute bottom-1.5 left-1.5 bg-black/75 text-white text-[10px] font-bold px-1.5 py-0.5 rounded min-w-[20px] text-center">
-            {overlayData.qty}
-          </div>
-          {overlayData.market > 0 && (
-            <div className="absolute bottom-1.5 right-1.5 bg-black/75 text-amber-300 text-[10px] font-bold px-1.5 py-0.5 rounded">
-              ${overlayData.market.toFixed(2)}
-            </div>
-          )}
-        </>
-      )}
-    </div>
-  );
-
   return (
     <div
       className={cn("group relative", active && "select-none")}
@@ -201,16 +147,71 @@ export const CardCell = memo(function CardCell({
         </div>
       )}
 
-      {/* Card image — in select mode, click is intercepted */}
-      {active ? (
-        <div onClick={handleSelectClick} className="cursor-pointer">
-          {imageContent}
+      {/* Always render Link — click is intercepted in select mode */}
+      <Link
+        href={`/cards/${card.id}`}
+        prefetch={false}
+        onClick={handleClick}
+        className={cn(active && "cursor-pointer")}
+        draggable={false}
+      >
+        <div
+          className={cn(
+            "relative overflow-hidden rounded-lg bg-muted/30",
+            selectedQty > 0 && "ring-2 ring-amber-500"
+          )}
+        >
+          {card.variantSlug ? (
+            <CardImage
+              slug={card.variantSlug}
+              name={card.name}
+              width={260}
+              height={364}
+              blurDataUrl={card.blurDataUrl}
+              className={cn(
+                "w-full h-auto",
+                !active &&
+                  "transition-transform duration-200 group-hover:scale-105",
+                hasOverlay && !overlayData && "opacity-40"
+              )}
+            />
+          ) : (
+            <div className="aspect-[5/7] flex items-center justify-center text-xs text-muted-foreground">
+              No image
+            </div>
+          )}
+
+          {/* Top/bottom half indicators (select mode, desktop) */}
+          {active && (
+            <div className="absolute inset-0 flex flex-col pointer-events-none">
+              <div className="flex-1 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                <span className="bg-green-500/70 text-white text-[10px] font-bold px-2 py-0.5 rounded">
+                  +1
+                </span>
+              </div>
+              <div className="flex-1 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                <span className="bg-red-500/70 text-white text-[10px] font-bold px-2 py-0.5 rounded">
+                  −1
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Collection overlay badges */}
+          {overlayData && (
+            <>
+              <div className="absolute bottom-1.5 left-1.5 bg-black/75 text-white text-[10px] font-bold px-1.5 py-0.5 rounded min-w-[20px] text-center">
+                {overlayData.qty}
+              </div>
+              {overlayData.market > 0 && (
+                <div className="absolute bottom-1.5 right-1.5 bg-black/75 text-amber-300 text-[10px] font-bold px-1.5 py-0.5 rounded">
+                  ${overlayData.market.toFixed(2)}
+                </div>
+              )}
+            </>
+          )}
         </div>
-      ) : (
-        <Link href={`/cards/${card.id}`} prefetch={false}>
-          {imageContent}
-        </Link>
-      )}
+      </Link>
 
       {/* Info below image */}
       <div className="mt-1 px-0.5 flex items-center justify-between gap-1">
