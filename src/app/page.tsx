@@ -2,8 +2,6 @@ import { Suspense } from "react";
 import { getAllCards, getAllSets } from "@/lib/data";
 import { CardBrowser } from "@/components/card-browser";
 import { CardBrowserSkeleton } from "@/components/skeletons";
-import { getUser } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
 import type { SetInfo } from "@/lib/types";
 
 export default function Home() {
@@ -22,28 +20,7 @@ export default function Home() {
 }
 
 async function CardBrowserLoader() {
-  const [cards, sets, user] = await Promise.all([
-    getAllCards(),
-    getAllSets(),
-    getUser(),
-  ]);
+  const [cards, sets] = await Promise.all([getAllCards(), getAllSets()]);
 
-  // If user is logged in, fetch their decks for the selection action bar
-  let userDecks: { id: string; name: string }[] = [];
-  if (user) {
-    userDecks = await prisma.deck.findMany({
-      where: { userId: user.id },
-      select: { id: true, name: true },
-      orderBy: { updatedAt: "desc" },
-    });
-  }
-
-  return (
-    <CardBrowser
-      cards={cards}
-      sets={sets as SetInfo[]}
-      selectable={!!user}
-      userDecks={userDecks}
-    />
-  );
+  return <CardBrowser cards={cards} sets={sets as SetInfo[]} />;
 }

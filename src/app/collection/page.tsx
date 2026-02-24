@@ -111,13 +111,6 @@ async function CollectionContent() {
     (s, e) => s + (e.purchasePrice ?? 0) * e.quantity, 0
   );
 
-  // Get user's decks for the selection action bar
-  const userDecks = await prisma.deck.findMany({
-    where: { userId: user.id },
-    select: { id: true, name: true },
-    orderBy: { updatedAt: "desc" },
-  });
-
   const statsHeader = (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -163,10 +156,7 @@ async function CollectionContent() {
         overlay={overlayEntries}
         showOwnedToggle
         defaultOwnedOnly
-        selectable
-        userDecks={userDecks}
         searchPlaceholder="Search collection..."
-        context="collection"
       />
       <div className="mt-6">
         <SharingSettings

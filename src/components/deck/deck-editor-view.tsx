@@ -45,7 +45,6 @@ interface DeckEditorViewProps {
   deckCards: DeckCardData[];
   allCards: BrowserCard[];
   sets: SetInfo[];
-  userDecks: { id: string; name: string }[];
 }
 
 const SECTION_META: Record<Section, { label: string; sublabel: string; icon: React.ReactNode; max: number }> = {
@@ -61,7 +60,6 @@ export function DeckEditorView({
   deckCards,
   allCards,
   sets,
-  userDecks,
 }: DeckEditorViewProps) {
   const [activeSection, setActiveSection] = useState<Section>("spellbook");
   const [deckCollapsed, setDeckCollapsed] = useState(false);
@@ -191,10 +189,6 @@ export function DeckEditorView({
         <CardBrowser
           cards={allCards}
           sets={sets}
-          selectable
-          context="deck"
-          deckId={deckId}
-          userDecks={userDecks}
           searchPlaceholder={
             activeSection === "avatar" ? "Search avatars..."
             : activeSection === "atlas" ? "Search sites..."

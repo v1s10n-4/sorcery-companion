@@ -1,8 +1,10 @@
+import { Suspense } from "react";
 import type { Metadata } from "next";
 import { Cinzel, Inter } from "next/font/google";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
 import { Analytics } from "@vercel/analytics/next";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { SelectionProvider } from "@/components/selection-provider";
 import { Nav } from "@/components/nav";
 import "./globals.css";
 
@@ -37,6 +39,9 @@ export default function RootLayout({
           <TooltipProvider delayDuration={300}>
             <Nav />
             {children}
+            <Suspense>
+              <SelectionProvider />
+            </Suspense>
           </TooltipProvider>
         </NuqsAdapter>
         <Analytics />

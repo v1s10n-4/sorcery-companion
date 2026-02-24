@@ -75,13 +75,6 @@ async function DeckEditorContent({ deckId }: { deckId: string }) {
     section: dc.section,
   }));
 
-  // Get user's other decks (for selection bar)
-  const userDecks = await prisma.deck.findMany({
-    where: { userId: user.id },
-    select: { id: true, name: true },
-    orderBy: { updatedAt: "desc" },
-  });
-
   return (
     <DeckEditorView
       deckId={deck.id}
@@ -89,7 +82,6 @@ async function DeckEditorContent({ deckId }: { deckId: string }) {
       deckCards={deckCards}
       allCards={allCards}
       sets={sets as SetInfo[]}
-      userDecks={userDecks}
     />
   );
 }
