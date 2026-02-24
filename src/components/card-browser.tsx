@@ -558,6 +558,22 @@ export function CardBrowser({
           context={context}
           deckId={deckId}
           onClear={clearSelection}
+          onUpdateQty={(cardId, qty) => {
+            setSelection((prev) => {
+              const next = new Map(prev);
+              if (qty <= 0) { next.delete(cardId); if (next.size === 0) setSelectMode(false); }
+              else next.set(cardId, qty);
+              return next;
+            });
+          }}
+          onRemoveCard={(cardId) => {
+            setSelection((prev) => {
+              const next = new Map(prev);
+              next.delete(cardId);
+              if (next.size === 0) setSelectMode(false);
+              return next;
+            });
+          }}
         />
       )}
     </div>

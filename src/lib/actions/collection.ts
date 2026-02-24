@@ -171,3 +171,41 @@ export async function updateCollectionCard(
   revalidatePath("/collection");
   return { success: true };
 }
+
+/** Fetch all variants for a card (for variant picker) */
+export async function getCardVariants(cardId: string) {
+  const variants = await prisma.cardVariant.findMany({
+    where: { cardId },
+    orderBy: [{ finish: "asc" }, { createdAt: "asc" }],
+    select: {
+      id: true,
+      slug: true,
+      finish: true,
+      product: true,
+      artist: true,
+      set: {
+        select: { set: { select: { name: true } } },
+      },
+      tcgplayerProducts: {
+        take: 1,
+        select: {
+          priceSnapshots: {
+            orderBy: { recordedAt: "desc" },
+            take: 1,
+            select: { marketPrice: true },
+          },
+        },
+      },
+    },
+  });
+
+  return variants.map((v) => ({
+    id: v.id,
+    slug: v.slug,
+    finish: v.finish,
+    product: v.product,
+    artist: v.artist,
+    setName: v.set.set.name,
+    marketPrice: v.tcgplayerProducts[0]?.priceSnapshots[0]?.marketPrice ?? null,
+  }));
+}
