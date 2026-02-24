@@ -15,12 +15,14 @@ const SelectionActionBar = dynamic(
 
 /**
  * Global selection provider — mount once in root layout.
- * Syncs Zustand store ↔ nuqs `?select=1` URL param.
- * Renders the floating action bar when items are selected.
+ * Hydrates Zustand from sessionStorage, syncs store ↔ nuqs `?select=1`.
  */
 export function SelectionProvider() {
   const active = useSelectionStore((s) => s.active);
   const itemCount = useSelectionStore((s) => s.items.size);
+  const hydrated = useSelectionStore((s) => s.hydrated);
+  const _hydrate = useSelectionStore((s) => s._hydrate);
+  const deactivate = useSelectionStore((s) => s.deactivate);
 
   const [selectParam, setSelectParam] = useQueryState(
     "select",
@@ -29,23 +31,30 @@ export function SelectionProvider() {
       .withOptions({ shallow: true, clearOnDefault: true, throttleMs: 100 })
   );
 
+  // Hydrate store from sessionStorage on first mount
+  useEffect(() => {
+    _hydrate();
+  }, [_hydrate]);
+
   // Sync store → URL
   useEffect(() => {
+    if (!hydrated) return;
     if (active && !selectParam) setSelectParam(true);
     else if (!active && selectParam) setSelectParam(null);
-  }, [active, selectParam, setSelectParam]);
+  }, [active, selectParam, setSelectParam, hydrated]);
 
-  // Sync URL → store (e.g. user navigates to ?select=1)
+  // Sync URL → store on load (e.g. shared link with ?select=1)
+  // If URL says select but store has no items after hydration, clean up
   useEffect(() => {
-    const store = useSelectionStore.getState();
-    if (selectParam && !store.active) store.activate();
-    else if (!selectParam && store.active) store.deactivate();
-    // Only run on selectParam change, not store changes
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectParam]);
+    if (!hydrated) return;
+    if (selectParam && itemCount === 0) {
+      // URL says select mode but nothing to select — clean up
+      setSelectParam(null);
+    }
+  }, [hydrated, selectParam, itemCount, setSelectParam]);
 
-  // Render action bar when items are selected
-  if (itemCount === 0) return null;
+  // Don't render action bar until hydrated and we have items
+  if (!hydrated || itemCount === 0) return null;
 
   return <SelectionActionBar />;
 }
