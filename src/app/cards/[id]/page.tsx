@@ -31,8 +31,27 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 export default async function CardDetailPage({ params }: PageProps) {
   const { id } = await params;
 
+  // Get card for bg image
+  const bgCard = await getCard(id);
+  const bgSlug = bgCard?.variants[0]?.slug;
+  const bgImageUrl = bgSlug
+    ? `https://pub-fbad7d695b084411b42bdff03adbffd5.r2.dev/cards/${bgSlug}.png`
+    : null;
+
   return (
-    <main className="container mx-auto px-4 py-6 max-w-4xl">
+    <main className="relative container mx-auto px-4 py-6 max-w-4xl">
+      {/* Blurred card art background */}
+      {bgImageUrl && (
+        <div
+          className="fixed inset-0 -z-10 opacity-[0.07] blur-3xl scale-125 pointer-events-none"
+          style={{
+            backgroundImage: `url(${bgImageUrl})`,
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+          }}
+        />
+      )}
+
       <Link
         href="/"
         className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6"

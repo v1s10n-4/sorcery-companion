@@ -139,6 +139,20 @@ export function SelectionActionBar({
     });
   };
 
+  const handleRemoveFromCollection = () => {
+    startTransition(async () => {
+      const { removeFromCollectionByCardId } = await import("@/lib/actions/collection");
+      let removed = 0;
+      for (const [cardId, qty] of selection) {
+        try {
+          await removeFromCollectionByCardId(cardId, qty);
+          removed += qty;
+        } catch {}
+      }
+      showSuccess(`−${removed} from collection`);
+    });
+  };
+
   const handleAddToDeck = () => {
     const dId = targetDeckId;
     if (!dId) return;
@@ -187,8 +201,8 @@ export function SelectionActionBar({
 
               <div className="h-4 w-px bg-border" />
 
-              {/* Collection action */}
-              {(context === "browse" || context === "collection") && (
+              {/* Collection action — add when browsing, remove when on collection page */}
+              {context === "browse" && (
                 <Tooltip label="Add to collection">
                   <button
                     onClick={handleAddToCollection}
@@ -199,9 +213,20 @@ export function SelectionActionBar({
                   </button>
                 </Tooltip>
               )}
+              {context === "collection" && (
+                <Tooltip label="Remove from collection">
+                  <button
+                    onClick={handleRemoveFromCollection}
+                    disabled={isPending}
+                    className="p-2 rounded-full hover:bg-muted transition-colors cursor-pointer disabled:opacity-50 text-red-400"
+                  >
+                    {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                  </button>
+                </Tooltip>
+              )}
 
               {/* Deck action */}
-              {(context === "browse" || context === "deck") && userDecks.length > 0 && (
+              {(context === "browse" || context === "collection" || context === "deck") && userDecks.length > 0 && (
                 <>
                   {!deckId && (
                     <Select value={targetDeckId} onValueChange={setTargetDeckId}>
@@ -325,7 +350,7 @@ export function SelectionActionBar({
 
           {/* Drawer actions */}
           <div className="shrink-0 pt-3 border-t border-border flex gap-2">
-            {(context === "browse" || context === "collection") && (
+            {context === "browse" && (
               <Button
                 size="sm"
                 className="flex-1 gap-1.5"
@@ -336,7 +361,19 @@ export function SelectionActionBar({
                 Add to Collection
               </Button>
             )}
-            {(context === "browse" || context === "deck") && targetDeckId && (
+            {context === "collection" && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="flex-1 gap-1.5 text-red-400 hover:text-red-300"
+                onClick={() => { setDrawerOpen(false); handleRemoveFromCollection(); }}
+                disabled={isPending}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Remove from Collection
+              </Button>
+            )}
+            {(context === "browse" || context === "collection" || context === "deck") && targetDeckId && (
               <Button
                 size="sm"
                 variant="outline"

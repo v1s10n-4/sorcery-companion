@@ -13,8 +13,9 @@ const RARITY_LIMITS: Record<string, number> = {
   unique: 1,
 };
 
-const ATLAS_SIZE = 20;
+const ATLAS_SIZE = 30;
 const SPELLBOOK_SIZE = 60;
+const COLLECTION_SIZE = 10; // sideboard
 
 export async function createDeck(name: string) {
   const user = await requireUser();
@@ -58,7 +59,7 @@ export async function updateDeck(
 export async function addCardToDeck(
   deckId: string,
   cardId: string,
-  section: "avatar" | "atlas" | "spellbook"
+  section: "avatar" | "atlas" | "spellbook" | "collection"
 ) {
   const user = await requireUser();
   const deck = await prisma.deck.findUnique({
@@ -80,6 +81,10 @@ export async function addCardToDeck(
   if (section === "spellbook" && (card.type === "Avatar" || card.type === "Site")) {
     throw new Error("Avatar and Site cards cannot be in the Spellbook");
   }
+  // Collection (sideboard) can hold any non-Avatar card
+  if (section === "collection" && card.type === "Avatar") {
+    throw new Error("Avatar cards cannot be in the Collection (sideboard)");
+  }
 
   // Avatar: only 1
   if (section === "avatar") {
@@ -98,6 +103,9 @@ export async function addCardToDeck(
   }
   if (section === "spellbook" && sectionTotal >= SPELLBOOK_SIZE) {
     throw new Error(`Spellbook is full (${SPELLBOOK_SIZE} cards)`);
+  }
+  if (section === "collection" && sectionTotal >= COLLECTION_SIZE) {
+    throw new Error(`Collection (sideboard) is full (${COLLECTION_SIZE} cards)`);
   }
 
   // Rarity limits
@@ -152,14 +160,16 @@ export async function removeCardFromDeck(deckCardId: string) {
 
 export async function searchCardsForDeck(
   query: string,
-  section: "avatar" | "atlas" | "spellbook"
+  section: "avatar" | "atlas" | "spellbook" | "collection"
 ) {
   const typeFilter =
     section === "avatar"
       ? { type: "Avatar" }
       : section === "atlas"
         ? { type: "Site" }
-        : { type: { notIn: ["Avatar", "Site"] } };
+        : section === "collection"
+          ? { type: { not: "Avatar" } } // sideboard: any non-Avatar
+          : { type: { notIn: ["Avatar", "Site"] } };
 
   const cards = await prisma.card.findMany({
     where: {

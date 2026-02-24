@@ -209,3 +209,37 @@ export async function getCardVariants(cardId: string) {
     marketPrice: v.tcgplayerProducts[0]?.priceSnapshots[0]?.marketPrice ?? null,
   }));
 }
+
+/** Remove cards from collection by card ID */
+export async function removeFromCollectionByCardId(cardId: string, quantity: number = 1) {
+  const user = await requireUser();
+
+  const collection = await prisma.collection.findFirst({
+    where: { userId: user.id },
+  });
+  if (!collection) throw new Error("No collection");
+
+  // Find collection cards matching this cardId
+  const collectionCards = await prisma.collectionCard.findMany({
+    where: { collectionId: collection.id, cardId },
+    orderBy: { createdAt: "asc" },
+  });
+
+  let toRemove = quantity;
+  for (const cc of collectionCards) {
+    if (toRemove <= 0) break;
+    if (cc.quantity <= toRemove) {
+      toRemove -= cc.quantity;
+      await prisma.collectionCard.delete({ where: { id: cc.id } });
+    } else {
+      await prisma.collectionCard.update({
+        where: { id: cc.id },
+        data: { quantity: cc.quantity - toRemove },
+      });
+      toRemove = 0;
+    }
+  }
+
+  revalidatePath("/collection");
+  return { success: true };
+}
