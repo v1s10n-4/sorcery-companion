@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { getUser } from "@/lib/auth";
 
 /** Fetch minimal card metadata for display (name, type, rarity, image slug) */
 export async function getCardMetaBatch(cardIds: string[]) {
@@ -28,4 +29,16 @@ export async function getCardMetaBatch(cardIds: string[]) {
     rarity: c.rarity,
     slug: c.variants[0]?.slug ?? null,
   }));
+}
+
+/** Fetch current user's decks (id + name). Returns [] if not logged in. */
+export async function getUserDecks() {
+  const user = await getUser();
+  if (!user) return [];
+
+  return prisma.deck.findMany({
+    where: { userId: user.id },
+    select: { id: true, name: true },
+    orderBy: { updatedAt: "desc" },
+  });
 }

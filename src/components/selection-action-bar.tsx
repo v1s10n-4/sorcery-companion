@@ -9,6 +9,13 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { CardImage } from "@/components/card-image";
 import {
   X,
@@ -19,6 +26,8 @@ import {
   Minus,
   Plus,
   Trash2,
+  BookmarkPlus,
+  Library,
 } from "lucide-react";
 import { useSelectionStore } from "@/stores/selection-store";
 
@@ -44,18 +53,22 @@ export function SelectionActionBar() {
 
   const pathname = usePathname();
   const context = getRouteContext(pathname);
-  const deckId = getDeckId(pathname);
+  const currentDeckId = getDeckId(pathname);
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [success, setSuccess] = useState<string | null>(null);
+
+  // Card metadata for drawer display
   const [cardMeta, setCardMeta] = useState<
-    Map<
-      string,
-      { name: string; type: string; rarity: string | null; slug: string | null }
-    >
+    Map<string, { name: string; type: string; rarity: string | null; slug: string | null }>
   >(new Map());
   const [loadingMeta, setLoadingMeta] = useState(false);
+
+  // Deck picker state (for collection context)
+  const [userDecks, setUserDecks] = useState<{ id: string; name: string }[] | null>(null);
+  const [selectedDeckId, setSelectedDeckId] = useState<string>("");
+  const [loadingDecks, setLoadingDecks] = useState(false);
 
   const uniqueCards = items.size;
   const selectedIds = useMemo(() => [...items.keys()], [items]);
@@ -87,14 +100,25 @@ export function SelectionActionBar() {
     })();
   }, [drawerOpen, selectedIds, cardMeta]);
 
-  // Actions — no try/catch wrapping (let Next.js handle redirects naturally)
+  // Lazy-fetch user decks when in collection context (or drawer opens in collection)
+  useEffect(() => {
+    if (context !== "collection" || userDecks !== null || loadingDecks) return;
+    setLoadingDecks(true);
+    (async () => {
+      const { getUserDecks } = await import("@/lib/actions/cards");
+      const decks = await getUserDecks();
+      setUserDecks(decks);
+      if (decks.length > 0) setSelectedDeckId(decks[0].id);
+      setLoadingDecks(false);
+    })();
+  }, [context, userDecks, loadingDecks]);
+
+  // ── Actions ──
+
   const handleAddToCollection = () => {
     startTransition(async () => {
       const { batchAddToCollection } = await import("@/lib/actions/collection");
-      const batch = [...items.entries()].map(([cardId, quantity]) => ({
-        cardId,
-        quantity,
-      }));
+      const batch = [...items.entries()].map(([cardId, quantity]) => ({ cardId, quantity }));
       const result = await batchAddToCollection(batch);
       showSuccess(`+${result.added} to collection`);
     });
@@ -102,35 +126,35 @@ export function SelectionActionBar() {
 
   const handleRemoveFromCollection = () => {
     startTransition(async () => {
-      const { batchRemoveFromCollection } = await import(
-        "@/lib/actions/collection"
-      );
-      const batch = [...items.entries()].map(([cardId, quantity]) => ({
-        cardId,
-        quantity,
-      }));
+      const { batchRemoveFromCollection } = await import("@/lib/actions/collection");
+      const batch = [...items.entries()].map(([cardId, quantity]) => ({ cardId, quantity }));
       const result = await batchRemoveFromCollection(batch);
       showSuccess(`−${result.removed} from collection`);
     });
   };
 
-  const handleAddToDeck = () => {
+  const handleAddToDeck = (deckId: string, section?: "collection") => {
     if (!deckId) return;
     startTransition(async () => {
       const { batchAddToDeck } = await import("@/lib/actions/deck");
-      // Don't pass section — let the server auto-detect from card type
       const batch = [...items.entries()].map(([cardId, quantity]) => ({
         cardId,
         quantity,
+        ...(section ? { section } : {}),
       }));
-      const result = await batchAddToDeck(deckId!, batch);
-      showSuccess(`+${result.added} to deck`);
+      const result = await batchAddToDeck(deckId, batch);
+      const label = section === "collection" ? "deck sideboard" : "deck";
+      showSuccess(`+${result.added} to ${label}`);
     });
   };
 
+  // Resolve target deck — either from URL (deck page) or picker (collection page)
+  const targetDeckId = currentDeckId ?? selectedDeckId;
+  const hasDeckTarget = !!targetDeckId;
+
   return (
     <>
-      {/* Compact floating pill */}
+      {/* ── Compact floating pill ── */}
       <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-4 fade-in duration-200">
         <div className="bg-card/95 backdrop-blur-md border border-border rounded-full shadow-2xl px-3 py-2 flex items-center gap-2">
           {success ? (
@@ -151,53 +175,99 @@ export function SelectionActionBar() {
 
               <div className="h-4 w-px bg-border" />
 
-              {/* Context-aware quick actions */}
-              {(context === "browse" || context === "collection") && (
+              {/* ── BROWSE: Add to collection ── */}
+              {context === "browse" && (
                 <Tip label="Add to collection">
                   <button
                     onClick={handleAddToCollection}
                     disabled={isPending}
                     className="p-2 rounded-full hover:bg-muted transition-colors cursor-pointer disabled:opacity-50"
                   >
-                    {isPending ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <FolderPlus className="h-4 w-4" />
-                    )}
+                    {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <FolderPlus className="h-4 w-4" />}
                   </button>
                 </Tip>
               )}
 
+              {/* ── COLLECTION: Remove + Deck picker + Add to deck/sideboard ── */}
               {context === "collection" && (
-                <Tip label="Remove from collection">
-                  <button
-                    onClick={handleRemoveFromCollection}
-                    disabled={isPending}
-                    className="p-2 rounded-full hover:bg-muted transition-colors cursor-pointer disabled:opacity-50 text-red-400"
-                  >
-                    {isPending ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Trash2 className="h-4 w-4" />
-                    )}
-                  </button>
-                </Tip>
+                <>
+                  <Tip label="Remove from collection">
+                    <button
+                      onClick={handleRemoveFromCollection}
+                      disabled={isPending}
+                      className="p-2 rounded-full hover:bg-muted transition-colors cursor-pointer disabled:opacity-50 text-red-400"
+                    >
+                      {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                    </button>
+                  </Tip>
+                  {userDecks && userDecks.length > 0 && (
+                    <>
+                      <div className="h-4 w-px bg-border" />
+                      <Select value={selectedDeckId} onValueChange={setSelectedDeckId}>
+                        <SelectTrigger className="h-7 max-w-[100px] text-[10px] rounded-full border-0 bg-muted px-2">
+                          <SelectValue placeholder="Deck" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {userDecks.map((d) => (
+                            <SelectItem key={d.id} value={d.id} className="text-xs">{d.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Tip label="Add to deck">
+                        <button
+                          onClick={() => handleAddToDeck(selectedDeckId)}
+                          disabled={isPending || !selectedDeckId}
+                          className="p-2 rounded-full hover:bg-muted transition-colors cursor-pointer disabled:opacity-50"
+                        >
+                          <BookmarkPlus className="h-4 w-4" />
+                        </button>
+                      </Tip>
+                      <Tip label="Add to deck sideboard">
+                        <button
+                          onClick={() => handleAddToDeck(selectedDeckId, "collection")}
+                          disabled={isPending || !selectedDeckId}
+                          className="p-2 rounded-full hover:bg-muted transition-colors cursor-pointer disabled:opacity-50"
+                        >
+                          <Library className="h-4 w-4" />
+                        </button>
+                      </Tip>
+                    </>
+                  )}
+                </>
               )}
 
-              {context === "deck" && deckId && (
-                <Tip label="Add to deck">
-                  <button
-                    onClick={handleAddToDeck}
-                    disabled={isPending}
-                    className="p-2 rounded-full hover:bg-muted transition-colors cursor-pointer disabled:opacity-50"
-                  >
-                    {isPending ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
+              {/* ── DECK: Add to this deck + sideboard + collection ── */}
+              {context === "deck" && currentDeckId && (
+                <>
+                  <Tip label="Add to deck">
+                    <button
+                      onClick={() => handleAddToDeck(currentDeckId)}
+                      disabled={isPending}
+                      className="p-2 rounded-full hover:bg-muted transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <BookmarkPlus className="h-4 w-4" />}
+                    </button>
+                  </Tip>
+                  <Tip label="Add to deck sideboard">
+                    <button
+                      onClick={() => handleAddToDeck(currentDeckId, "collection")}
+                      disabled={isPending}
+                      className="p-2 rounded-full hover:bg-muted transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      <Library className="h-4 w-4" />
+                    </button>
+                  </Tip>
+                  <div className="h-4 w-px bg-border" />
+                  <Tip label="Add to collection">
+                    <button
+                      onClick={handleAddToCollection}
+                      disabled={isPending}
+                      className="p-2 rounded-full hover:bg-muted transition-colors cursor-pointer disabled:opacity-50"
+                    >
                       <FolderPlus className="h-4 w-4" />
-                    )}
-                  </button>
-                </Tip>
+                    </button>
+                  </Tip>
+                </>
               )}
 
               <div className="h-4 w-px bg-border" />
@@ -213,16 +283,12 @@ export function SelectionActionBar() {
         </div>
       </div>
 
-      {/* Bottom drawer */}
+      {/* ── Bottom drawer ── */}
       <Sheet open={drawerOpen} onOpenChange={setDrawerOpen}>
-        <SheetContent
-          side="bottom"
-          className="max-h-[70vh] flex flex-col rounded-t-xl"
-        >
+        <SheetContent side="bottom" className="max-h-[70vh] flex flex-col rounded-t-xl">
           <SheetHeader className="shrink-0 pb-3 border-b border-border">
             <SheetTitle>
-              Selection ({uniqueCards} card{uniqueCards !== 1 ? "s" : ""},{" "}
-              {total} total)
+              Selection ({uniqueCards} card{uniqueCards !== 1 ? "s" : ""}, {total} total)
             </SheetTitle>
           </SheetHeader>
 
@@ -232,51 +298,28 @@ export function SelectionActionBar() {
               const meta = cardMeta.get(cardId);
 
               return (
-                <div
-                  key={cardId}
-                  className="flex items-start gap-3 p-2 rounded-lg border border-border/40 bg-card"
-                >
+                <div key={cardId} className="flex items-start gap-3 p-2 rounded-lg border border-border/40 bg-card">
                   {meta?.slug ? (
-                    <CardImage
-                      slug={meta.slug}
-                      name={meta.name}
-                      width={48}
-                      height={67}
-                      className="rounded-sm shrink-0"
-                    />
+                    <CardImage slug={meta.slug} name={meta.name} width={48} height={67} className="rounded-sm shrink-0" />
                   ) : (
                     <div className="w-12 h-[67px] rounded-sm bg-muted/30 shrink-0 flex items-center justify-center">
-                      {loadingMeta && (
-                        <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
-                      )}
+                      {loadingMeta && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
                     </div>
                   )}
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">
-                      {meta?.name ?? "Loading..."}
-                    </p>
+                    <p className="text-sm font-medium truncate">{meta?.name ?? "Loading..."}</p>
                     {meta && (
-                      <p className="text-[10px] text-muted-foreground">
-                        {meta.type} · {meta.rarity ?? "—"}
-                      </p>
+                      <p className="text-[10px] text-muted-foreground">{meta.type} · {meta.rarity ?? "—"}</p>
                     )}
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
                     <button
-                      onClick={() =>
-                        qty <= 1 ? removeCard(cardId) : setQty(cardId, qty - 1)
-                      }
+                      onClick={() => (qty <= 1 ? removeCard(cardId) : setQty(cardId, qty - 1))}
                       className="h-7 w-7 rounded border border-border flex items-center justify-center hover:bg-muted transition-colors cursor-pointer"
                     >
-                      {qty <= 1 ? (
-                        <Trash2 className="h-3 w-3 text-red-400" />
-                      ) : (
-                        <Minus className="h-3 w-3" />
-                      )}
+                      {qty <= 1 ? <Trash2 className="h-3 w-3 text-red-400" /> : <Minus className="h-3 w-3" />}
                     </button>
-                    <span className="text-sm font-bold tabular-nums w-6 text-center">
-                      {qty}
-                    </span>
+                    <span className="text-sm font-bold tabular-nums w-6 text-center">{qty}</span>
                     <button
                       onClick={() => setQty(cardId, qty + 1)}
                       className="h-7 w-7 rounded border border-border flex items-center justify-center hover:bg-muted transition-colors cursor-pointer"
@@ -289,57 +332,70 @@ export function SelectionActionBar() {
             })}
           </div>
 
-          {/* Drawer actions */}
-          <div className="shrink-0 pt-3 border-t border-border flex flex-wrap gap-2">
-            <Button
-              size="sm"
-              className="flex-1 gap-1.5"
-              onClick={() => {
-                setDrawerOpen(false);
-                handleAddToCollection();
-              }}
-              disabled={isPending}
-            >
-              <FolderPlus className="h-3.5 w-3.5" /> Collection
-            </Button>
+          {/* Drawer actions — full width buttons */}
+          <div className="shrink-0 pt-3 border-t border-border space-y-2">
+            {/* Row 1: Primary action for context */}
+            {context === "browse" && (
+              <Button className="w-full gap-1.5" onClick={() => { setDrawerOpen(false); handleAddToCollection(); }} disabled={isPending}>
+                <FolderPlus className="h-3.5 w-3.5" /> Add to collection
+              </Button>
+            )}
+
             {context === "collection" && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="flex-1 gap-1.5 text-red-400"
-                onClick={() => {
-                  setDrawerOpen(false);
-                  handleRemoveFromCollection();
-                }}
-                disabled={isPending}
-              >
-                <Trash2 className="h-3.5 w-3.5" /> Remove
+              <div className="flex gap-2">
+                <Button variant="outline" className="flex-1 gap-1.5 text-red-400" onClick={() => { setDrawerOpen(false); handleRemoveFromCollection(); }} disabled={isPending}>
+                  <Trash2 className="h-3.5 w-3.5" /> Remove
+                </Button>
+                {userDecks && userDecks.length > 0 && (
+                  <>
+                    <Button variant="outline" className="flex-1 gap-1.5" onClick={() => { setDrawerOpen(false); handleAddToDeck(selectedDeckId); }} disabled={isPending || !selectedDeckId}>
+                      <BookmarkPlus className="h-3.5 w-3.5" /> Deck
+                    </Button>
+                    <Button variant="outline" className="flex-1 gap-1.5" onClick={() => { setDrawerOpen(false); handleAddToDeck(selectedDeckId, "collection"); }} disabled={isPending || !selectedDeckId}>
+                      <Library className="h-3.5 w-3.5" /> Sideboard
+                    </Button>
+                  </>
+                )}
+              </div>
+            )}
+
+            {context === "deck" && currentDeckId && (
+              <div className="flex gap-2">
+                <Button className="flex-1 gap-1.5" onClick={() => { setDrawerOpen(false); handleAddToDeck(currentDeckId); }} disabled={isPending}>
+                  <BookmarkPlus className="h-3.5 w-3.5" /> Add to deck
+                </Button>
+                <Button variant="outline" className="flex-1 gap-1.5" onClick={() => { setDrawerOpen(false); handleAddToDeck(currentDeckId, "collection"); }} disabled={isPending}>
+                  <Library className="h-3.5 w-3.5" /> Sideboard
+                </Button>
+              </div>
+            )}
+
+            {/* Row 2: secondary actions */}
+            {context === "deck" && currentDeckId && (
+              <Button variant="outline" className="w-full gap-1.5" onClick={() => { setDrawerOpen(false); handleAddToCollection(); }} disabled={isPending}>
+                <FolderPlus className="h-3.5 w-3.5" /> Add to collection instead
               </Button>
             )}
-            {context === "deck" && deckId && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="flex-1 gap-1.5"
-                onClick={() => {
-                  setDrawerOpen(false);
-                  handleAddToDeck();
-                }}
-                disabled={isPending}
-              >
-                <FolderPlus className="h-3.5 w-3.5" /> Deck
-              </Button>
+
+            {/* Deck picker in drawer (for collection context) */}
+            {context === "collection" && userDecks && userDecks.length > 0 && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground shrink-0">Target deck:</span>
+                <Select value={selectedDeckId} onValueChange={setSelectedDeckId}>
+                  <SelectTrigger className="h-8 flex-1 text-xs">
+                    <SelectValue placeholder="Select a deck" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {userDecks.map((d) => (
+                      <SelectItem key={d.id} value={d.id} className="text-xs">{d.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             )}
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-muted-foreground"
-              onClick={() => {
-                setDrawerOpen(false);
-                clear();
-              }}
-            >
-              Clear
+
+            <Button size="sm" variant="ghost" className="w-full text-muted-foreground" onClick={() => { setDrawerOpen(false); clear(); }}>
+              Clear selection
             </Button>
           </div>
         </SheetContent>
@@ -348,13 +404,7 @@ export function SelectionActionBar() {
   );
 }
 
-function Tip({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
+function Tip({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="relative group/tip">
       {children}
