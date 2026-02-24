@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition, useEffect, useMemo } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -21,17 +21,6 @@ import {
   Trash2,
 } from "lucide-react";
 import { useSelectionStore } from "@/stores/selection-store";
-import { cn } from "@/lib/utils";
-
-interface VariantInfo {
-  id: string;
-  slug: string;
-  finish: string;
-  product: string;
-  artist: string | null;
-  setName: string;
-  marketPrice: number | null;
-}
 
 type RouteContext = "browse" | "collection" | "deck";
 
@@ -41,7 +30,6 @@ function getRouteContext(pathname: string): RouteContext {
   return "browse";
 }
 
-/** Extract deck ID from /decks/[id] routes */
 function getDeckId(pathname: string): string | null {
   const match = pathname.match(/^\/decks\/([^/]+)/);
   return match?.[1] ?? null;
@@ -55,23 +43,19 @@ export function SelectionActionBar() {
   const total = useSelectionStore((s) => s.total());
 
   const pathname = usePathname();
-  const router = useRouter();
   const context = getRouteContext(pathname);
   const deckId = getDeckId(pathname);
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [success, setSuccess] = useState<string | null>(null);
-  const [variantCache, setVariantCache] = useState<Map<string, VariantInfo[]>>(
-    new Map()
-  );
-  const [loadingVariants, setLoadingVariants] = useState<Set<string>>(
-    new Set()
-  );
-  // Card metadata cache (fetched lazily for drawer display)
   const [cardMeta, setCardMeta] = useState<
-    Map<string, { name: string; type: string; rarity: string | null; slug: string | null }>
+    Map<
+      string,
+      { name: string; type: string; rarity: string | null; slug: string | null }
+    >
   >(new Map());
+  const [loadingMeta, setLoadingMeta] = useState(false);
 
   const uniqueCards = items.size;
   const selectedIds = useMemo(() => [...items.keys()], [items]);
@@ -84,78 +68,29 @@ export function SelectionActionBar() {
     }, 1200);
   };
 
-  // Redirect to signup if action requires auth and server returns redirect
-  const withAuth = (fn: () => Promise<void>) => {
-    startTransition(async () => {
-      try {
-        await fn();
-      } catch (e: any) {
-        if (e?.digest?.includes("NEXT_REDIRECT")) {
-          // requireUser() threw a redirect — send to signup
-          router.push("/signup");
-          return;
-        }
-        throw e;
-      }
-    });
-  };
-
-  // Lazy fetch card metadata + variants when drawer opens
+  // Fetch card metadata when drawer opens
   useEffect(() => {
     if (!drawerOpen) return;
+    const toFetch = selectedIds.filter((id) => !cardMeta.has(id));
+    if (toFetch.length === 0) return;
 
-    const toFetchMeta = selectedIds.filter((id) => !cardMeta.has(id));
-    const toFetchVariants = selectedIds.filter(
-      (id) => !variantCache.has(id) && !loadingVariants.has(id)
-    );
-
-    if (toFetchMeta.length > 0) {
-      (async () => {
-        const { getCardMetaBatch } = await import("@/lib/actions/cards");
-        const results = await getCardMetaBatch(toFetchMeta);
-        setCardMeta((prev) => {
-          const next = new Map(prev);
-          for (const r of results) next.set(r.id, r);
-          return next;
-        });
-      })();
-    }
-
-    if (toFetchVariants.length > 0) {
-      setLoadingVariants((prev) => {
-        const next = new Set(prev);
-        toFetchVariants.forEach((id) => next.add(id));
+    setLoadingMeta(true);
+    (async () => {
+      const { getCardMetaBatch } = await import("@/lib/actions/cards");
+      const results = await getCardMetaBatch(toFetch);
+      setCardMeta((prev) => {
+        const next = new Map(prev);
+        for (const r of results) next.set(r.id, r);
         return next;
       });
-      (async () => {
-        const { getCardVariants } = await import("@/lib/actions/collection");
-        const results = await Promise.all(
-          toFetchVariants.map(async (cardId) => ({
-            cardId,
-            variants: await getCardVariants(cardId),
-          }))
-        );
-        setVariantCache((prev) => {
-          const next = new Map(prev);
-          results.forEach(({ cardId, variants }) =>
-            next.set(cardId, variants)
-          );
-          return next;
-        });
-        setLoadingVariants((prev) => {
-          const next = new Set(prev);
-          toFetchVariants.forEach((id) => next.delete(id));
-          return next;
-        });
-      })();
-    }
-  }, [drawerOpen, selectedIds, cardMeta, variantCache, loadingVariants]);
+      setLoadingMeta(false);
+    })();
+  }, [drawerOpen, selectedIds, cardMeta]);
 
+  // Actions — no try/catch wrapping (let Next.js handle redirects naturally)
   const handleAddToCollection = () => {
-    withAuth(async () => {
-      const { batchAddToCollection } = await import(
-        "@/lib/actions/collection"
-      );
+    startTransition(async () => {
+      const { batchAddToCollection } = await import("@/lib/actions/collection");
       const batch = [...items.entries()].map(([cardId, quantity]) => ({
         cardId,
         quantity,
@@ -166,7 +101,7 @@ export function SelectionActionBar() {
   };
 
   const handleRemoveFromCollection = () => {
-    withAuth(async () => {
+    startTransition(async () => {
       const { batchRemoveFromCollection } = await import(
         "@/lib/actions/collection"
       );
@@ -181,18 +116,13 @@ export function SelectionActionBar() {
 
   const handleAddToDeck = () => {
     if (!deckId) return;
-    withAuth(async () => {
+    startTransition(async () => {
       const { batchAddToDeck } = await import("@/lib/actions/deck");
-      const batch = [...items.entries()].map(([cardId, quantity]) => {
-        const meta = cardMeta.get(cardId);
-        const section =
-          meta?.type === "Avatar"
-            ? ("avatar" as const)
-            : meta?.type === "Site"
-              ? ("atlas" as const)
-              : ("spellbook" as const);
-        return { cardId, quantity, section };
-      });
+      // Don't pass section — let the server auto-detect from card type
+      const batch = [...items.entries()].map(([cardId, quantity]) => ({
+        cardId,
+        quantity,
+      }));
       const result = await batchAddToDeck(deckId!, batch);
       showSuccess(`+${result.added} to deck`);
     });
@@ -222,7 +152,7 @@ export function SelectionActionBar() {
               <div className="h-4 w-px bg-border" />
 
               {/* Context-aware quick actions */}
-              {context === "browse" && (
+              {(context === "browse" || context === "collection") && (
                 <Tip label="Add to collection">
                   <button
                     onClick={handleAddToCollection}
@@ -239,34 +169,19 @@ export function SelectionActionBar() {
               )}
 
               {context === "collection" && (
-                <>
-                  <Tip label="Add to collection">
-                    <button
-                      onClick={handleAddToCollection}
-                      disabled={isPending}
-                      className="p-2 rounded-full hover:bg-muted transition-colors cursor-pointer disabled:opacity-50"
-                    >
-                      {isPending ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <FolderPlus className="h-4 w-4" />
-                      )}
-                    </button>
-                  </Tip>
-                  <Tip label="Remove from collection">
-                    <button
-                      onClick={handleRemoveFromCollection}
-                      disabled={isPending}
-                      className="p-2 rounded-full hover:bg-muted transition-colors cursor-pointer disabled:opacity-50 text-red-400"
-                    >
-                      {isPending ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Trash2 className="h-4 w-4" />
-                      )}
-                    </button>
-                  </Tip>
-                </>
+                <Tip label="Remove from collection">
+                  <button
+                    onClick={handleRemoveFromCollection}
+                    disabled={isPending}
+                    className="p-2 rounded-full hover:bg-muted transition-colors cursor-pointer disabled:opacity-50 text-red-400"
+                  >
+                    {isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-4 w-4" />
+                    )}
+                  </button>
+                </Tip>
               )}
 
               {context === "deck" && deckId && (
@@ -315,7 +230,6 @@ export function SelectionActionBar() {
             {selectedIds.map((cardId) => {
               const qty = items.get(cardId) ?? 0;
               const meta = cardMeta.get(cardId);
-              const isLoading = loadingVariants.has(cardId);
 
               return (
                 <div
@@ -332,14 +246,14 @@ export function SelectionActionBar() {
                     />
                   ) : (
                     <div className="w-12 h-[67px] rounded-sm bg-muted/30 shrink-0 flex items-center justify-center">
-                      {isLoading ? (
+                      {loadingMeta && (
                         <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
-                      ) : null}
+                      )}
                     </div>
                   )}
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">
-                      {meta?.name ?? cardId.slice(0, 8) + "..."}
+                      {meta?.name ?? "Loading..."}
                     </p>
                     {meta && (
                       <p className="text-[10px] text-muted-foreground">
