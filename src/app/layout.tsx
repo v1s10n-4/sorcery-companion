@@ -5,6 +5,7 @@ import { Analytics } from "@vercel/analytics/next";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { SelectionProvider } from "@/components/selection-provider";
 import { Nav } from "@/components/nav";
+import { BottomTabBar } from "@/components/bottom-tab-bar";
 import "./globals.css";
 
 const cinzel = Cinzel({
@@ -39,6 +40,7 @@ export default function RootLayout({
             <Nav />
             {children}
             <SelectionProvider />
+            <BottomTabBar />
           </TooltipProvider>
         </NuqsAdapter>
         <Analytics />

@@ -44,12 +44,15 @@ export interface ScanSet {
 // ── Identify card via sorcery-lens ─────────────────────────────────────────────
 
 /**
- * Send a base64-encoded JPEG frame to sorcery-lens for identification.
+ * Send a JPEG frame (base64-encoded) to sorcery-lens for identification.
+ * POSTs as multipart/form-data with Bearer auth.
  * Returns the top match + up to 3 candidates.
- * Gracefully returns error result if service is unavailable.
+ * Gracefully returns an error result if the service is unavailable.
  */
 export async function identifyCard(frameBase64: string): Promise<ScanResult> {
   const lensUrl = process.env.SORCERY_LENS_URL;
+  const apiKey = process.env.SORCERY_LENS_API_KEY;
+
   if (!lensUrl) {
     return {
       match: null,
@@ -61,21 +64,31 @@ export async function identifyCard(frameBase64: string): Promise<ScanResult> {
 
   const t0 = Date.now();
   try {
+    // Convert base64 → Buffer → Blob for FormData
+    const buffer = Buffer.from(frameBase64, "base64");
+    const blob = new Blob([buffer], { type: "image/jpeg" });
+    const formData = new FormData();
+    formData.append("image", blob, "frame.jpg");
+
+    const headers: Record<string, string> = {};
+    if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+
     const res = await fetch(`${lensUrl}/identify`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ image: frameBase64 }),
+      headers,
+      body: formData,
       signal: AbortSignal.timeout(8000),
     });
 
     const latencyMs = Date.now() - t0;
 
     if (!res.ok) {
+      const body = await res.text().catch(() => "");
       return {
         match: null,
         candidates: [],
         latencyMs,
-        error: `Scanner service error (${res.status})`,
+        error: `Scanner error (${res.status})${body ? `: ${body.slice(0, 80)}` : ""}`,
       };
     }
 
