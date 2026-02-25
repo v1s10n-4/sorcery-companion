@@ -244,7 +244,14 @@ export async function batchAddToDeck(deckId: string, items: BatchDeckItem[]) {
   }
 
   let added = 0;
-  const operations: Promise<unknown>[] = [];
+
+  // Build a deduplicated list of upsert ops — process serially in a transaction
+  // to avoid (deckId, cardId) unique constraint races from concurrent creates.
+  type UpsertOp =
+    | { kind: "delete-avatar"; id: string }
+    | { kind: "upsert"; cardId: string; section: string; qty: number; existingId: string | null; existingQty: number };
+
+  const ops: UpsertOp[] = [];
 
   for (const item of items) {
     const card = cardMap.get(item.cardId);
@@ -268,11 +275,11 @@ export async function batchAddToDeck(deckId: string, items: BatchDeckItem[]) {
       : section === "collection" ? COLLECTION_SIZE
       : 1;
 
-    const key = `${item.cardId}-${section}`;
-    const existing = deckState.get(key);
-    const currentQty = existing?.quantity ?? 0;
+    // Look up any existing record for this card in the deck (any section)
+    const existingAny = deck.cards.find((c) => c.cardId === item.cardId);
+    const existingInSection = deckState.get(`${item.cardId}-${section}`);
+    const currentQty = existingInSection?.quantity ?? 0;
 
-    // Rarity limit
     const rarity = card.rarity?.toLowerCase() ?? "ordinary";
     const maxCopies = RARITY_LIMITS[rarity] ?? 4;
     const canAdd = Math.min(
@@ -282,44 +289,54 @@ export async function batchAddToDeck(deckId: string, items: BatchDeckItem[]) {
     );
     if (canAdd <= 0) continue;
 
-    // Avatar: replace
     if (section === "avatar") {
       const existingAvatar = deck.cards.find((c) => c.section === "avatar");
       if (existingAvatar && existingAvatar.cardId !== item.cardId) {
-        operations.push(prisma.deckCard.delete({ where: { id: existingAvatar.id } }));
+        ops.push({ kind: "delete-avatar", id: existingAvatar.id });
       }
-      if (existing) {
-        // Already this avatar, skip
-        continue;
-      }
-      operations.push(prisma.deckCard.create({
-        data: { deckId, cardId: item.cardId, section, quantity: 1 },
-      }));
+      if (existingInSection) continue; // already this avatar
+      ops.push({ kind: "upsert", cardId: item.cardId, section, qty: 1, existingId: null, existingQty: 0 });
       added += 1;
+      // Update in-memory state so subsequent items see it
+      deckState.set(`${item.cardId}-${section}`, { id: "pending", quantity: 1, section });
+      sectionTotals[section] = (sectionTotals[section] ?? 0) + 1;
       continue;
     }
 
-    if (existing) {
-      operations.push(
-        prisma.deckCard.update({
-          where: { id: existing.id },
-          data: { quantity: existing.quantity + canAdd },
-        })
-      );
-      existing.quantity += canAdd;
-    } else {
-      operations.push(
-        prisma.deckCard.create({
-          data: { deckId, cardId: item.cardId, section, quantity: canAdd },
-        })
-      );
-      deckState.set(key, { id: "pending", quantity: canAdd, section });
-    }
+    ops.push({
+      kind: "upsert",
+      cardId: item.cardId,
+      section,
+      qty: canAdd,
+      existingId: existingInSection?.id ?? (existingAny?.cardId === item.cardId ? existingAny.id : null) ?? null,
+      existingQty: currentQty,
+    });
+
+    // Update in-memory state for next iterations targeting the same card
+    const stateKey = `${item.cardId}-${section}`;
+    const cur = deckState.get(stateKey);
+    if (cur) cur.quantity += canAdd;
+    else deckState.set(stateKey, { id: "pending", quantity: canAdd, section });
     sectionTotals[section] = currentTotal + canAdd;
     added += canAdd;
   }
 
-  await Promise.all(operations);
+  // Execute all ops in a transaction, serially (no concurrent creates)
+  await prisma.$transaction(
+    ops.map((op) => {
+      if (op.kind === "delete-avatar") {
+        return prisma.deckCard.delete({ where: { id: op.id } });
+      }
+      // Use updateMany + create (upsert) to avoid the (deckId, cardId) race
+      // updateMany matches on deckId+cardId, create only runs if no match
+      return prisma.deckCard.upsert({
+        where: { deckId_cardId: { deckId, cardId: op.cardId } },
+        update: { quantity: { increment: op.qty }, section: op.section },
+        create: { deckId, cardId: op.cardId, section: op.section, quantity: op.qty },
+      });
+    })
+  );
+
   revalidatePath(`/decks/${deckId}`);
   return { success: true, added };
 }
