@@ -45,6 +45,12 @@ export async function Nav() {
                 >
                   Decks
                 </Link>
+                <Link
+                  href="/scan"
+                  className="text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Scan
+                </Link>
                 <UserMenu
                   name={user.name || "User"}
                   avatarUrl={user.avatarUrl}

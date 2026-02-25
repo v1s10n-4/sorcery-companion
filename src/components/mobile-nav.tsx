@@ -16,6 +16,7 @@ import {
   Layers,
   BookOpen,
   Swords,
+  Camera,
   Settings,
   LogOut,
   LogIn,
@@ -47,6 +48,7 @@ export function MobileNav({ isLoggedIn, userName, avatarUrl }: MobileNavProps) {
       ? [
           { href: "/collection", label: "Collection", icon: BookOpen },
           { href: "/decks", label: "Decks", icon: Swords },
+          { href: "/scan", label: "Scan Cards", icon: Camera },
           { href: "/settings", label: "Settings", icon: Settings },
         ]
       : []),
