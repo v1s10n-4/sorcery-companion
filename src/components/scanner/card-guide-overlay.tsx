@@ -8,7 +8,7 @@
  *   progress — 0..1 stabilizing progress
  */
 
-type Phase = "idle" | "stabilizing" | "scanning" | "matched" | "candidates" | "error" | "permission-denied";
+type Phase = "idle" | "stabilizing" | "scanning" | "matched" | "error" | "permission-denied";
 
 interface CardGuideOverlayProps {
   phase: Phase;
@@ -16,11 +16,11 @@ interface CardGuideOverlayProps {
 }
 
 // Card aspect ratio: 63mm × 88mm = ~0.716
-const CARD_W = 240; // SVG units
-const CARD_H = Math.round(CARD_W / 0.716); // ~335
-
-const SVG_W = 390;
-const SVG_H = 520;
+// Fill ~88% of viewport width so users are encouraged to fill the frame
+export const SVG_W = 390;
+export const SVG_H = 844; // taller viewport (modern phone aspect ~9:19.5)
+export const CARD_W = Math.round(SVG_W * 0.88); // ~343
+export const CARD_H = Math.round(CARD_W / 0.716); // ~479
 
 const cx = SVG_W / 2;
 const cy = SVG_H / 2;
@@ -42,7 +42,6 @@ const phaseColors: Record<string, string> = {
   stabilizing: "#f59e0b", // amber-400
   scanning: "#60a5fa",   // blue-400
   matched: "#4ade80",    // green-400
-  candidates: "#f59e0b",
   error: "#f87171",      // red-400
   "permission-denied": "#f87171",
 };

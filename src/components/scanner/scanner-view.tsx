@@ -5,12 +5,11 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, Camera, Layers, List, AlertTriangle } from "lucide-react";
 import { useCamera } from "@/hooks/use-camera";
 import { useFrameStability } from "@/hooks/use-frame-stability";
-import { CardGuideOverlay } from "./card-guide-overlay";
+import { CardGuideOverlay, SVG_W, SVG_H, CARD_W, CARD_H } from "./card-guide-overlay";
 import { CardResultToast } from "./card-result-toast";
-import { CandidatePicker } from "./candidate-picker";
 import { SetPicker, getStoredScanSet } from "./set-picker";
 import { ScanSessionSummary } from "./scan-session-summary";
-import type { ScanCandidate, ScanSessionItem } from "@/lib/actions/scan";
+import type { ScanSessionItem } from "@/lib/actions/scan";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -19,11 +18,76 @@ type Phase =
   | "stabilizing"
   | "scanning"
   | "matched"
-  | "candidates"
   | "error"
   | "permission-denied";
 
 const CONFIDENCE_THRESHOLD = 0.85;
+
+// ── Card region crop helpers ───────────────────────────────────────────────────
+
+// The card guide overlay defines a card-shaped cutout in SVG coordinates.
+// We need to map that to actual video pixel coordinates for cropping.
+const CARD_X_RATIO = (SVG_W / 2 - CARD_W / 2) / SVG_W; // left edge as fraction
+const CARD_Y_RATIO = (SVG_H / 2 - CARD_H / 2) / SVG_H; // top edge as fraction
+const CARD_W_RATIO = CARD_W / SVG_W;
+const CARD_H_RATIO = CARD_H / SVG_H;
+
+/**
+ * Capture a frame from the video, cropped to the card guide region.
+ * Returns a base64 JPEG data URL, or null on failure.
+ */
+function captureCardRegion(
+  video: HTMLVideoElement,
+  cropCanvas: HTMLCanvasElement,
+): string | null {
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+  if (!vw || !vh) return null;
+
+  // The video uses object-cover — it fills the viewport and may be cropped.
+  // We need to figure out which portion of the video is visible.
+  const viewportAspect = video.clientWidth / video.clientHeight;
+  const videoAspect = vw / vh;
+
+  let srcX: number, srcY: number, srcW: number, srcH: number;
+
+  if (videoAspect > viewportAspect) {
+    // Video is wider than viewport — cropped on sides
+    srcH = vh;
+    srcW = vh * viewportAspect;
+    srcX = (vw - srcW) / 2;
+    srcY = 0;
+  } else {
+    // Video is taller than viewport — cropped on top/bottom
+    srcW = vw;
+    srcH = vw / viewportAspect;
+    srcX = 0;
+    srcY = (vh - srcH) / 2;
+  }
+
+  // Now map the card guide region (in viewport fractions) to source video pixels
+  const cardSrcX = srcX + srcW * CARD_X_RATIO;
+  const cardSrcY = srcY + srcH * CARD_Y_RATIO;
+  const cardSrcW = srcW * CARD_W_RATIO;
+  const cardSrcH = srcH * CARD_H_RATIO;
+
+  // Draw cropped region to canvas
+  const outW = Math.min(Math.round(cardSrcW), 512);
+  const outH = Math.round(outW / (CARD_W / CARD_H));
+  cropCanvas.width = outW;
+  cropCanvas.height = outH;
+
+  const ctx = cropCanvas.getContext("2d");
+  if (!ctx) return null;
+
+  ctx.drawImage(
+    video,
+    cardSrcX, cardSrcY, cardSrcW, cardSrcH,
+    0, 0, outW, outH,
+  );
+
+  return cropCanvas.toDataURL("image/jpeg", 0.85);
+}
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
@@ -31,14 +95,13 @@ export function ScannerView() {
   const router = useRouter();
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const cropCanvasRef = useRef<HTMLCanvasElement>(null);
 
   // State machine
   const [phase, setPhase] = useState<Phase>("idle");
   const [stabProgress, setStabProgress] = useState(0);
-  const stabStartRef = useRef<number | null>(null);
 
   // Scan results
-  const [currentCandidates, setCurrentCandidates] = useState<ScanCandidate[]>([]);
   const [toastData, setToastData] = useState<{
     name: string;
     slug: string | null;
@@ -75,14 +138,23 @@ export function ScannerView() {
   selectedSetSlugRef.current = selectedSetSlug;
 
   const handleStable = useCallback(
-    async (captureFrame: () => string | null) => {
+    async (_captureFrame: () => string | null) => {
       if (phaseRef.current !== "idle" && phaseRef.current !== "stabilizing")
         return;
 
       setPhase("scanning");
       setStabProgress(1);
 
-      const frame = captureFrame();
+      // Capture cropped card region instead of full frame
+      const video = videoRef.current;
+      const cropCanvas = cropCanvasRef.current;
+      if (!video || !cropCanvas) {
+        setPhase("idle");
+        setStabProgress(0);
+        return;
+      }
+
+      const frame = captureCardRegion(video, cropCanvas);
       if (!frame) {
         setPhase("idle");
         setStabProgress(0);
@@ -116,7 +188,6 @@ export function ScannerView() {
             return;
           }
 
-          // Check if card already in session → bump qty
           setSessionItems((prev) => {
             const idx = prev.findIndex(
               (i) =>
@@ -151,12 +222,13 @@ export function ScannerView() {
           });
 
           setPhase("matched");
-        } else if (result.candidates.length > 0) {
-          // ── Low confidence → show candidates ──
-          setCurrentCandidates(result.candidates.slice(0, 3));
-          setPhase("candidates");
         } else {
-          setErrorMsg("Card not recognized");
+          // ── Low confidence → skip, retry automatically ──
+          setErrorMsg(
+            result.match
+              ? `Low confidence (${Math.round(result.match.confidence * 100)}%) — move card closer`
+              : "Card not recognized"
+          );
           setPhase("error");
         }
       } catch (e) {
@@ -171,7 +243,6 @@ export function ScannerView() {
     if (phaseRef.current === "stabilizing") {
       setPhase("idle");
       setStabProgress(0);
-      stabStartRef.current = null;
     }
   }, []);
 
@@ -189,38 +260,7 @@ export function ScannerView() {
   // Track stabilizing progress with animation frame
   useEffect(() => {
     if (phase !== "idle" || !ready) return;
-
-    // When stability hook detects stillness, it will fire handleStable.
-    // To show the progress ring, we track time since last motion via a
-    // separate rAF loop that reads the internal state.
-    let raf: number;
-    let start: number | null = null;
-
-    const tick = () => {
-      // This is a simplified approach — the real stability is tracked in
-      // the hook. Here we just animate the ring on a timer after idle starts.
-      // The hook will reset us on motion or fire onStable at 350ms.
-      if (start === null) start = performance.now();
-      const elapsed = performance.now() - start;
-      const progress = Math.min(elapsed / 350, 1);
-
-      // Only show stabilizing UI if we've been still for at least 50ms
-      if (progress > 0.15) {
-        setPhase("stabilizing");
-        setStabProgress(progress);
-      }
-
-      if (progress < 1) {
-        raf = requestAnimationFrame(tick);
-      }
-    };
-
-    // Don't start immediately — wait for stability hook to signal
-    // Actually, we can't easily bridge these. Let's keep it simple:
-    // the ring fills over 350ms, and the hook fires at 350ms.
-    // If there's motion, handleMotion resets us.
-
-    return () => cancelAnimationFrame(raf);
+    return () => {};
   }, [phase, ready]);
 
   // ── Auto-return to idle after matched toast ─────────────────────────────────
@@ -229,62 +269,9 @@ export function ScannerView() {
     setPhase("idle");
     setStabProgress(0);
     setToastData(null);
-    setCurrentCandidates([]);
     setErrorMsg(null);
     resetStability();
   }, [resetStability]);
-
-  // ── Candidate pick ──────────────────────────────────────────────────────────
-
-  const handleCandidatePick = useCallback(
-    async (candidate: ScanCandidate) => {
-      const { resolveVariantForCard } = await import("@/lib/actions/scan");
-      const variant = await resolveVariantForCard(
-        candidate.cardId,
-        selectedSetSlugRef.current
-      );
-      if (!variant) {
-        returnToIdle();
-        return;
-      }
-
-      setSessionItems((prev) => {
-        const idx = prev.findIndex(
-          (i) =>
-            i.cardId === candidate.cardId &&
-            i.variantId === variant.variantId
-        );
-        if (idx >= 0) {
-          const next = [...prev];
-          next[idx] = { ...next[idx], quantity: next[idx].quantity + 1 };
-          setToastData({
-            name: candidate.name,
-            slug: variant.slug,
-            setName: variant.setName,
-            itemIndex: idx,
-          });
-          return next;
-        }
-        const newItem: ScanSessionItem = {
-          cardId: candidate.cardId,
-          variantId: variant.variantId,
-          name: candidate.name,
-          slug: variant.slug,
-          quantity: 1,
-        };
-        setToastData({
-          name: candidate.name,
-          slug: variant.slug,
-          setName: variant.setName,
-          itemIndex: prev.length,
-        });
-        return [...prev, newItem];
-      });
-
-      setPhase("matched");
-    },
-    [returnToIdle]
-  );
 
   // ── Undo last add ──────────────────────────────────────────────────────────
 
@@ -307,7 +294,6 @@ export function ScannerView() {
   // ── Commit / discard ────────────────────────────────────────────────────────
 
   const handleCommit = useCallback(() => {
-    // commitScanSession is called inside the summary sheet
     setSessionItems([]);
     setShowSummary(false);
     returnToIdle();
@@ -326,12 +312,21 @@ export function ScannerView() {
     }
   }, [sessionItems.length, router]);
 
+  // ── Auto-dismiss error after 2s ─────────────────────────────────────────────
+
+  useEffect(() => {
+    if (phase !== "error") return;
+    const timer = setTimeout(returnToIdle, 2000);
+    return () => clearTimeout(timer);
+  }, [phase, returnToIdle]);
+
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
     <div className="fixed inset-0 z-50 bg-black flex flex-col">
-      {/* Hidden canvas for frame comparison */}
+      {/* Hidden canvases for frame comparison + card crop */}
       <canvas ref={canvasRef} className="hidden" />
+      <canvas ref={cropCanvasRef} className="hidden" />
 
       {/* ── Header ── */}
       <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-3 py-2 bg-gradient-to-b from-black/80 to-transparent">
@@ -426,14 +421,6 @@ export function ScannerView() {
           </div>
         )}
       </div>
-
-      {/* ── Candidate picker (bottom sheet, non-blocking) ── */}
-      <CandidatePicker
-        candidates={currentCandidates}
-        open={phase === "candidates"}
-        onPick={handleCandidatePick}
-        onSkip={returnToIdle}
-      />
 
       {/* ── Set picker ── */}
       <SetPicker
