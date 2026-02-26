@@ -165,6 +165,15 @@ export function CardBrowser({
       .sort((a, b) => b[1] - a[1])
       .map(([name]) => name);
   }, [cards]);
+  const allArtists = useMemo(() => {
+    const counts = new Map<string, number>();
+    cards.forEach((c) =>
+      (c.artists ?? []).forEach((a) => counts.set(a, (counts.get(a) ?? 0) + 1))
+    );
+    return [...counts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([name]) => name);
+  }, [cards]);
 
   const tokens = useMemo(() => tokenize(debouncedQ), [debouncedQ]);
   const activeFilters = useMemo(() => extractFilters(tokens), [tokens]);
@@ -190,6 +199,7 @@ export function CardBrowser({
     const woSet = countWithout(base, tokens, "set");
     const woSubtype = countWithout(base, tokens, "subtype");
     const woKeyword = countWithout(base, tokens, "keyword");
+    const woArtist = countWithout(base, tokens, "artist");
     return {
       elements: Object.fromEntries(
         ELEMENTS.map((e) => [
@@ -224,6 +234,12 @@ export function CardBrowser({
           woKeyword.filter((c) => c.keywords.includes(k)).length,
         ])
       ),
+      artists: Object.fromEntries(
+        allArtists.map((a) => [
+          a,
+          woArtist.filter((c) => (c.artists ?? []).includes(a)).length,
+        ])
+      ),
     };
   }, [
     cards,
@@ -232,6 +248,7 @@ export function CardBrowser({
     allRarities,
     allSubtypes,
     allKeywords,
+    allArtists,
     sets,
     showOwnedOnly,
     ownedCardIds,
@@ -386,6 +403,7 @@ export function CardBrowser({
           sets={sets}
           subtypes={allSubtypes}
           keywords={allKeywords}
+          artists={allArtists}
           facetCounts={facetCounts}
           statRanges={statRanges}
         />

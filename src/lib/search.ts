@@ -330,6 +330,8 @@ function fieldMatchesSingle(
       return (card.keywords ?? []).some((k) => k.toLowerCase().includes(v));
     case "subtype":
       return (card.subTypes ?? []).some((s) => s.toLowerCase().includes(v));
+    case "artist":
+      return (card.artists ?? []).some((a) => a.toLowerCase().includes(v));
     case "cost":
       return token.numOp != null && token.numVal != null
         ? numCompare(card.cost, token.numOp, token.numVal)
@@ -426,6 +428,7 @@ export interface ActiveFilters {
   sets: MultiSelectState;
   subtypes: MultiSelectState;
   keywords: MultiSelectState;
+  artists: MultiSelectState;
   cost: NumericRange | null;
   attack: NumericRange | null;
   defence: NumericRange | null;
@@ -487,6 +490,7 @@ export function extractFilters(tokens: Token[]): ActiveFilters {
     sets: { values: [], mode: "any" },
     subtypes: { values: [], mode: "any" },
     keywords: { values: [], mode: "any" },
+    artists: { values: [], mode: "any" },
     cost: null,
     attack: null,
     defence: null,
@@ -503,6 +507,7 @@ export function extractFilters(tokens: Token[]): ActiveFilters {
     set: "sets",
     subtype: "subtypes",
     keyword: "keywords",
+    artist: "artists",
   };
 
   for (const [field, key] of Object.entries(fieldToKey)) {

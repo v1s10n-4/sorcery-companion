@@ -54,6 +54,7 @@ interface FacetCounts {
   sets: Record<string, number>;
   subtypes: Record<string, number>;
   keywords: Record<string, number>;
+  artists: Record<string, number>;
 }
 
 interface StatRange {
@@ -71,6 +72,7 @@ interface FilterSheetProps {
   sets: SetInfo[];
   subtypes: string[];
   keywords: string[];
+  artists: string[];
   facetCounts: FacetCounts;
   statRanges: {
     cost: StatRange;
@@ -110,6 +112,7 @@ export function FilterSheet({
   sets,
   subtypes,
   keywords,
+  artists,
   facetCounts,
   statRanges,
 }: FilterSheetProps) {
@@ -359,6 +362,20 @@ export function FilterSheet({
               toggle("keyword", v, activeFilters.keywords.mode)
             }
             onModeChange={(m) => changeMode("keyword", m)}
+            initialShow={10}
+          />
+
+          {/* ── Artists ── */}
+          <SearchableChipList
+            label="Artist"
+            field="artist"
+            items={artists}
+            state={activeFilters.artists}
+            counts={facetCounts.artists}
+            onToggle={(v) =>
+              toggle("artist", v, activeFilters.artists.mode)
+            }
+            onModeChange={(m) => changeMode("artist", m)}
             initialShow={10}
           />
 

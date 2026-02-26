@@ -13,6 +13,7 @@ export interface BrowserCard {
   rulesText: string | null;
   keywords: string[];
   subTypes: string[];
+  artists: string[];
   thresholdAir: number;
   thresholdEarth: number;
   thresholdFire: number;

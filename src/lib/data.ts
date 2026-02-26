@@ -35,11 +35,11 @@ export async function getAllCards(): Promise<BrowserCard[]> {
       thresholdFire: true,
       thresholdWater: true,
       variants: {
-        take: 1,
         orderBy: { createdAt: "asc" },
         select: {
           slug: true,
           blurDataUrl: true,
+          artist: true,
           tcgplayerProducts: {
             take: 1,
             select: {
@@ -76,6 +76,7 @@ export async function getAllCards(): Promise<BrowserCard[]> {
     thresholdEarth: c.thresholdEarth,
     thresholdFire: c.thresholdFire,
     thresholdWater: c.thresholdWater,
+    artists: [...new Set(c.variants.map((v) => v.artist).filter((a): a is string => !!a))],
     variantSlug: c.variants[0]?.slug ?? null,
     blurDataUrl: c.variants[0]?.blurDataUrl ?? null,
     setSlugs: c.sets.map((cs) => cs.set.slug),
