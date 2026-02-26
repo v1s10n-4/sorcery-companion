@@ -8,18 +8,19 @@
  *   progress — 0..1 stabilizing progress
  */
 
-type Phase =
+export type ScanPhase =
   | "idle"
   | "stabilizing"
   | "scanning"
   | "matched"
   | "uncertain"
+  | "result"
   | "no-detection"
   | "error"
   | "permission-denied";
 
 interface CardGuideOverlayProps {
-  phase: Phase;
+  phase: ScanPhase;
   progress?: number; // 0..1, used during "stabilizing"
 }
 
@@ -50,12 +51,14 @@ const phaseColors: Record<string, string> = {
   stabilizing: "#f59e0b",          // amber-400
   scanning: "#60a5fa",             // blue-400
   matched: "#4ade80",              // green-400
+  result: "#4ade80",               // green-400 — same as matched
   uncertain: "#fbbf24",            // amber-300 — softer than stabilizing
   "no-detection": "rgba(255,255,255,0.25)", // very muted — don't alarm
   error: "#f87171",                // red-400
   "permission-denied": "#f87171",
 };
 
+// "result" phase renders same as "matched" (green ring)
 export function CardGuideOverlay({ phase, progress = 0 }: CardGuideOverlayProps) {
   const color = phaseColors[phase] ?? phaseColors.idle;
 

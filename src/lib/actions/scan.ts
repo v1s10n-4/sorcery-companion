@@ -13,26 +13,41 @@ export interface ScanCandidate {
   confidence: number;
   distance: number;
   rotation: string;
-  /** Populated after variant resolution for display in picker */
-  setName?: string;
+}
+
+/** A resolved variant with display info + price */
+export interface ResolvedVariant {
+  variantId: string;
+  slug: string | null;
+  setName: string;
+  setSlug: string;
+  finish: string;
+  /** Market price in USD, or null if unknown */
+  price: number | null;
+}
+
+/** All available variants for a card (for the variant picker) */
+export interface CardVariantOption {
+  variantId: string;
+  slug: string | null;
+  setName: string;
+  setSlug: string;
+  finish: string;
+  price: number | null;
 }
 
 export interface ScanResult {
   match: {
     cardId: string;
     name: string;
-    /** Variant slug from the lens API (for image display) */
     slug: string | null;
     confidence: number;
     distance: number;
     rotation: string;
   } | null;
-  /** Additional results for uncertain-confidence picker */
   candidates: ScanCandidate[];
-  /** "detected" = card contour found; "fallback" = center-crop guess */
   method: "detected" | "fallback" | null;
   latencyMs: number;
-  /** True when results are empty OR method=fallback AND conf < CONF_NO_DETECT */
   noDetection: boolean;
   error?: string;
 }
@@ -42,6 +57,10 @@ export interface ScanSessionItem {
   variantId: string;
   name: string;
   slug: string | null;
+  setName: string;
+  setSlug: string;
+  finish: string;
+  price: number | null;
   quantity: number;
 }
 
@@ -52,11 +71,11 @@ export interface ScanSet {
   cardCount: number;
 }
 
-// ── Confidence thresholds (mirrors scanner-view.tsx) ──────────────────────────
-const CONF_HIGH = 0.7;       // ≥ 0.7 → auto-add
-const CONF_NO_DETECT = 0.45; // < 0.45 → no detection, don't even show a result
+// ── Confidence thresholds ────────────────────────────────────────────────────
+const CONF_HIGH = 0.7;
+const CONF_NO_DETECT = 0.45;
 
-// ── Raw API shape from sorcery-lens ──────────────────────────────────────────
+// ── Raw API types ────────────────────────────────────────────────────────────
 interface LensApiEntry {
   cardId: string;
   name: string;
@@ -72,38 +91,25 @@ interface LensApiResponse {
   time_ms: number;
 }
 
-// ── Sleep helper for retry backoff ────────────────────────────────────────────
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // ── Identify card via sorcery-lens ─────────────────────────────────────────────
 
-/**
- * Send a JPEG frame (base64-encoded) to sorcery-lens for identification.
- * POSTs as multipart/form-data with Bearer auth.
- * Retries up to 3× on 429 with exponential backoff (1s → 2s → 4s).
- * Gracefully returns an error result if the service is unavailable.
- */
 export async function identifyCard(frameBase64: string): Promise<ScanResult> {
   const lensUrl = process.env.SORCERY_LENS_URL;
   const apiKey = process.env.SORCERY_LENS_API_KEY;
 
   if (!lensUrl) {
     return {
-      match: null,
-      candidates: [],
-      method: null,
-      latencyMs: 0,
-      noDetection: true,
-      error: "Scanner service not configured",
+      match: null, candidates: [], method: null, latencyMs: 0,
+      noDetection: true, error: "Scanner service not configured",
     };
   }
 
-  // Strip data-URL prefix if present (captureCardRegion returns a full data URL)
   const raw = frameBase64.includes(",")
     ? frameBase64.split(",")[1]!
     : frameBase64;
 
-  // Convert base64 → Buffer → Blob for FormData
   const buffer = Buffer.from(raw, "base64");
   const blob = new Blob([buffer], { type: "image/jpeg" });
 
@@ -128,170 +134,178 @@ export async function identifyCard(frameBase64: string): Promise<ScanResult> {
 
       const latencyMs = Date.now() - t0;
 
-      // ── HTTP error handling ────────────────────────────────────────────────
       if (!res.ok) {
-        if (res.status === 429) {
-          // Rate limited — exponential backoff then retry
-          if (attempt < MAX_RETRIES) {
-            await sleep(1000 * Math.pow(2, attempt));
-            attempt++;
-            continue;
-          }
-          return {
-            match: null, candidates: [], method: null, latencyMs,
-            noDetection: true,
-            error: "Too many requests — please wait a moment",
-          };
+        if (res.status === 429 && attempt < MAX_RETRIES) {
+          await sleep(1000 * Math.pow(2, attempt));
+          attempt++;
+          continue;
         }
 
         const errMsg =
-          res.status === 401
-            ? "Invalid API key"
-            : res.status === 422
-            ? "Invalid image — try a different photo"
-            : res.status === 503
-            ? "Scanner temporarily unavailable"
-            : `Scanner error (${res.status})`;
+          res.status === 401 ? "Invalid API key"
+          : res.status === 422 ? "Invalid image — try a different photo"
+          : res.status === 429 ? "Too many requests — please wait"
+          : res.status === 503 ? "Scanner temporarily unavailable"
+          : `Scanner error (${res.status})`;
 
         return {
           match: null, candidates: [], method: null, latencyMs,
-          noDetection: true,
-          error: errMsg,
+          noDetection: true, error: errMsg,
         };
       }
 
-      // ── Parse new response format ──────────────────────────────────────────
       const data: LensApiResponse = await res.json();
       const results = data.results ?? [];
       const method = data.method ?? "fallback";
 
-      // Empty results → no detection
       if (results.length === 0) {
-        return {
-          match: null, candidates: [], method, latencyMs,
-          noDetection: true,
-        };
+        return { match: null, candidates: [], method, latencyMs, noDetection: true };
       }
 
       const top = results[0];
-      const conf = top.confidence;
-
-      // Fallback method + very low confidence → treat as no detection
-      if (method === "fallback" && conf < CONF_NO_DETECT) {
-        return {
-          match: null, candidates: [], method, latencyMs,
-          noDetection: true,
-        };
+      if (method === "fallback" && top.confidence < CONF_NO_DETECT) {
+        return { match: null, candidates: [], method, latencyMs, noDetection: true };
       }
 
-      // Build match from top result
-      const match: ScanResult["match"] = {
+      const match = {
         cardId: top.cardId,
         name: top.name,
         slug: top.slug ?? null,
-        confidence: conf,
+        confidence: top.confidence,
         distance: top.distance,
         rotation: top.rotation,
       };
 
-      // Build candidates from remaining results (for uncertain-confidence picker)
-      const candidates: ScanCandidate[] = results.slice(1, 4).map((r) => ({
-        cardId: r.cardId,
-        name: r.name,
-        slug: r.slug ?? null,
-        confidence: r.confidence,
-        distance: r.distance,
-        rotation: r.rotation,
-      }));
+      // Deduplicate candidates by cardId (different variants of same card)
+      const seenIds = new Set([top.cardId]);
+      const candidates: ScanCandidate[] = [];
+      for (const r of results.slice(1)) {
+        if (!seenIds.has(r.cardId)) {
+          seenIds.add(r.cardId);
+          candidates.push({
+            cardId: r.cardId, name: r.name, slug: r.slug ?? null,
+            confidence: r.confidence, distance: r.distance, rotation: r.rotation,
+          });
+        }
+        if (candidates.length >= 3) break;
+      }
 
-      // noDetection is false at this point — we have a usable result
       return { match, candidates, method, latencyMs, noDetection: false };
     } catch (e) {
-      // Network / timeout errors
       const latencyMs = Date.now() - t0;
       const msg = e instanceof Error ? e.message : "Scanner unavailable";
-
-      // Retry on timeout if we have attempts left
       if (attempt < MAX_RETRIES && (msg.includes("timeout") || msg.includes("fetch"))) {
         await sleep(1000 * Math.pow(2, attempt));
         attempt++;
         continue;
       }
-
-      const userMsg = msg.includes("timeout")
-        ? "Connection lost, retrying…"
-        : "Scanner unavailable";
-
       return {
         match: null, candidates: [], method: null, latencyMs,
         noDetection: true,
-        error: userMsg,
+        error: msg.includes("timeout") ? "Connection lost, retrying…" : "Scanner unavailable",
       };
     }
   }
 
-  // Should never reach here
   return {
     match: null, candidates: [], method: null, latencyMs: Date.now() - t0,
-    noDetection: true,
-    error: "Scanner unavailable",
+    noDetection: true, error: "Scanner unavailable",
   };
 }
 
-// ── Resolve which variant to use for a scanned card ───────────────────────────
+// ── Resolve variant for a card (with price) ──────────────────────────────────
 
-/**
- * Given a cardId and optional setSlug (from the set picker),
- * returns the best variantId + image slug to use for collection add.
- * Falls back to the default variant if card isn't in the selected set.
- */
 export async function resolveVariantForCard(
   cardId: string,
-  setSlug: string | null
-): Promise<{ variantId: string; slug: string | null; setName: string } | null> {
-  // Try to find a variant in the requested set first
-  if (setSlug) {
-    const inSet = await prisma.cardVariant.findFirst({
-      where: {
-        cardId,
-        set: { set: { slug: setSlug } },
-      },
-      orderBy: { finish: "asc" }, // Standard before foil
-      select: {
-        id: true,
-        slug: true,
-        set: { select: { set: { select: { name: true } } } },
-      },
-    });
-    if (inSet) {
-      return {
-        variantId: inSet.id,
-        slug: inSet.slug,
-        setName: inSet.set.set.name,
-      };
-    }
-  }
+  setSlug: string | null,
+): Promise<ResolvedVariant | null> {
+  const where = setSlug
+    ? { cardId, set: { set: { slug: setSlug } } }
+    : { cardId };
 
-  // Fall back to default variant (first by finish asc)
-  const fallback = await prisma.cardVariant.findFirst({
-    where: { cardId },
-    orderBy: [{ finish: "asc" }, { createdAt: "asc" }],
-    select: {
-      id: true,
-      slug: true,
-      set: { select: { set: { select: { name: true } } } },
+  // Try selected set first, then fallback to any
+  const variantSelect = {
+    id: true,
+    slug: true,
+    finish: true,
+    set: { select: { set: { select: { name: true, slug: true } } } },
+    tcgplayerProducts: {
+      select: {
+        priceSnapshots: {
+          orderBy: { recordedAt: "desc" as const },
+          take: 1,
+          select: { marketPrice: true },
+        },
+      },
+      take: 1,
     },
+  };
+
+  let variant = await prisma.cardVariant.findFirst({
+    where,
+    orderBy: [{ finish: "asc" }, { createdAt: "desc" }],
+    select: variantSelect,
   });
 
-  if (!fallback) return null;
+  if (!variant && setSlug) {
+    variant = await prisma.cardVariant.findFirst({
+      where: { cardId },
+      orderBy: [{ finish: "asc" }, { createdAt: "desc" }],
+      select: variantSelect,
+    });
+  }
+
+  if (!variant) return null;
+
+  const price = variant.tcgplayerProducts[0]?.priceSnapshots[0]?.marketPrice ?? null;
+
   return {
-    variantId: fallback.id,
-    slug: fallback.slug,
-    setName: fallback.set.set.name,
+    variantId: variant.id,
+    slug: variant.slug,
+    setName: variant.set.set.name,
+    setSlug: variant.set.set.slug,
+    finish: variant.finish,
+    price,
   };
 }
 
-// ── Get available sets for the set picker ──────────────────────────────────────
+// ── Get all variants for a card (for variant picker in result card) ──────────
+
+export async function getCardVariants(cardId: string): Promise<CardVariantOption[]> {
+  const variantSelect = {
+    id: true,
+    slug: true,
+    finish: true,
+    set: { select: { set: { select: { name: true, slug: true } } } },
+    tcgplayerProducts: {
+      select: {
+        priceSnapshots: {
+          orderBy: { recordedAt: "desc" as const },
+          take: 1,
+          select: { marketPrice: true },
+        },
+      },
+      take: 1,
+    },
+  };
+
+  const variants = await prisma.cardVariant.findMany({
+    where: { cardId },
+    orderBy: [{ createdAt: "desc" }, { finish: "asc" }],
+    select: variantSelect,
+  });
+
+  return variants.map((v) => ({
+    variantId: v.id,
+    slug: v.slug,
+    setName: v.set.set.name,
+    setSlug: v.set.set.slug,
+    finish: v.finish,
+    price: v.tcgplayerProducts[0]?.priceSnapshots[0]?.marketPrice ?? null,
+  }));
+}
+
+// ── Get available sets ───────────────────────────────────────────────────────
 
 export async function getScanSets(): Promise<ScanSet[]> {
   const sets = await prisma.set.findMany({
@@ -314,12 +328,8 @@ export async function getScanSets(): Promise<ScanSet[]> {
 
 // ── Commit scan session to collection ─────────────────────────────────────────
 
-/**
- * Add all items from the scan session to the user's collection.
- * Uses explicit variantIds so the correct printing is recorded.
- */
 export async function commitScanSession(
-  items: ScanSessionItem[]
+  items: ScanSessionItem[],
 ): Promise<{ added: number }> {
   if (items.length === 0) return { added: 0 };
   await requireUser();

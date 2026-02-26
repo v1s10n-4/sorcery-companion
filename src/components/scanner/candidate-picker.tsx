@@ -50,9 +50,6 @@ export function CandidatePicker({
               )}
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold truncate">{c.name}</p>
-                {c.setName && (
-                  <p className="text-[10px] text-muted-foreground">{c.setName}</p>
-                )}
               </div>
               <div className="shrink-0 text-right">
                 <span

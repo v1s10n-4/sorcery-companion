@@ -2,45 +2,30 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Camera, Layers, List, AlertTriangle, HelpCircle } from "lucide-react";
+import {
+  ArrowLeft, Camera, Layers, List, AlertTriangle,
+  ChevronDown, X, DollarSign,
+} from "lucide-react";
 import { useCamera } from "@/hooks/use-camera";
 import { useFrameStability } from "@/hooks/use-frame-stability";
-import { CardGuideOverlay, SVG_W, SVG_H, CARD_W, CARD_H } from "./card-guide-overlay";
-import { CardResultToast } from "./card-result-toast";
-import { CandidatePicker } from "./candidate-picker";
+import { CardGuideOverlay, SVG_W, SVG_H, CARD_W, CARD_H, type ScanPhase } from "./card-guide-overlay";
 import { SetPicker, getStoredScanSet } from "./set-picker";
 import { ScanSessionSummary } from "./scan-session-summary";
-import type { ScanCandidate, ScanSessionItem } from "@/lib/actions/scan";
+import { VariantPicker } from "./variant-picker";
+import { CardImage } from "@/components/card-image";
+import type {
+  ScanResult, ScanSessionItem, ResolvedVariant, CardVariantOption,
+} from "@/lib/actions/scan";
 
-// ── Types ──────────────────────────────────────────────────────────────────────
+type Phase = ScanPhase;
 
-type Phase =
-  | "idle"
-  | "stabilizing"
-  | "scanning"
-  | "matched"      // conf ≥ 0.7, auto-added, showing green toast
-  | "uncertain"    // 0.45 ≤ conf < 0.7, showing candidate picker for confirmation
-  | "no-detection" // no card found or too low — brief feedback, then auto-idle
-  | "error"        // API / network failure
-  | "permission-denied";
+// ── Crop helpers ───────────────────────────────────────────────────────────────
 
-// Mirrors thresholds in scan.ts
-const CONF_HIGH = 0.7;
-const CONF_LOW = 0.45;
-
-// ── Card region crop helpers ───────────────────────────────────────────────────
-
-// The card guide overlay defines a card-shaped cutout in SVG coordinates.
-// We need to map that to actual video pixel coordinates for cropping.
-const CARD_X_RATIO = (SVG_W / 2 - CARD_W / 2) / SVG_W; // left edge as fraction
-const CARD_Y_RATIO = (SVG_H / 2 - CARD_H / 2) / SVG_H; // top edge as fraction
+const CARD_X_RATIO = (SVG_W / 2 - CARD_W / 2) / SVG_W;
+const CARD_Y_RATIO = (SVG_H / 2 - CARD_H / 2) / SVG_H;
 const CARD_W_RATIO = CARD_W / SVG_W;
 const CARD_H_RATIO = CARD_H / SVG_H;
 
-/**
- * Capture a frame from the video, cropped to the card guide region.
- * Returns a base64 JPEG data URL, or null on failure.
- */
 function captureCardRegion(
   video: HTMLVideoElement,
   cropCanvas: HTMLCanvasElement,
@@ -49,34 +34,28 @@ function captureCardRegion(
   const vh = video.videoHeight;
   if (!vw || !vh) return null;
 
-  // The video uses object-cover — it fills the viewport and may be cropped.
-  // We need to figure out which portion of the video is visible.
   const viewportAspect = video.clientWidth / video.clientHeight;
   const videoAspect = vw / vh;
 
   let srcX: number, srcY: number, srcW: number, srcH: number;
 
   if (videoAspect > viewportAspect) {
-    // Video is wider than viewport — cropped on sides
     srcH = vh;
     srcW = vh * viewportAspect;
     srcX = (vw - srcW) / 2;
     srcY = 0;
   } else {
-    // Video is taller than viewport — cropped on top/bottom
     srcW = vw;
     srcH = vw / viewportAspect;
     srcX = 0;
     srcY = (vh - srcH) / 2;
   }
 
-  // Now map the card guide region (in viewport fractions) to source video pixels
   const cardSrcX = srcX + srcW * CARD_X_RATIO;
   const cardSrcY = srcY + srcH * CARD_Y_RATIO;
   const cardSrcW = srcW * CARD_W_RATIO;
   const cardSrcH = srcH * CARD_H_RATIO;
 
-  // Draw cropped region to canvas
   const outW = Math.min(Math.round(cardSrcW), 512);
   const outH = Math.round(outW / (CARD_W / CARD_H));
   cropCanvas.width = outW;
@@ -85,13 +64,15 @@ function captureCardRegion(
   const ctx = cropCanvas.getContext("2d");
   if (!ctx) return null;
 
-  ctx.drawImage(
-    video,
-    cardSrcX, cardSrcY, cardSrcW, cardSrcH,
-    0, 0, outW, outH,
-  );
-
+  ctx.drawImage(video, cardSrcX, cardSrcY, cardSrcW, cardSrcH, 0, 0, outW, outH);
   return cropCanvas.toDataURL("image/jpeg", 0.85);
+}
+
+// ── Format price ───────────────────────────────────────────────────────────────
+
+function formatPrice(price: number | null): string {
+  if (price == null) return "—";
+  return `$${price.toFixed(2)}`;
 }
 
 // ── Component ──────────────────────────────────────────────────────────────────
@@ -102,24 +83,27 @@ export function ScannerView() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const cropCanvasRef = useRef<HTMLCanvasElement>(null);
 
-  // State machine
+  // ── State ──────────────────────────────────────────────────────────────────
   const [phase, setPhase] = useState<Phase>("idle");
   const [stabProgress, setStabProgress] = useState(0);
-
-  // Scan results
-  const [toastData, setToastData] = useState<{
-    name: string;
-    slug: string | null;
-    setName?: string;
-    confidence?: number;
-    rotation?: string;
-    itemIndex: number;
-  } | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  // Candidates for uncertain-confidence picker
-  const [uncertainCandidates, setUncertainCandidates] = useState<ScanCandidate[]>([]);
 
-  // Session
+  // Current result (shown in the result card at bottom)
+  const [currentResult, setCurrentResult] = useState<{
+    cardId: string;
+    name: string;
+    confidence: number;
+    variant: ResolvedVariant;
+  } | null>(null);
+
+  // Track the cardId currently visible in viewport to prevent re-adding
+  const currentCardIdRef = useRef<string | null>(null);
+
+  // Auto-confirm timer for the result card
+  const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [confirmCountdown, setConfirmCountdown] = useState(0);
+
+  // Session items (pending for batch commit)
   const [sessionItems, setSessionItems] = useState<ScanSessionItem[]>([]);
   const [showSummary, setShowSummary] = useState(false);
 
@@ -127,7 +111,10 @@ export function ScannerView() {
   const [selectedSetSlug, setSelectedSetSlug] = useState<string | null>(null);
   const [showSetPicker, setShowSetPicker] = useState(false);
 
-  // Restore set from sessionStorage
+  // Variant picker (inline on result card)
+  const [showVariantPicker, setShowVariantPicker] = useState(false);
+  const [variantOptions, setVariantOptions] = useState<CardVariantOption[]>([]);
+
   useEffect(() => {
     setSelectedSetSlug(getStoredScanSet());
   }, []);
@@ -139,41 +126,19 @@ export function ScannerView() {
     },
   });
 
-  // ── Add a card to the scan session ─────────────────────────────────────────
+  // ── Add to session ─────────────────────────────────────────────────────────
 
   const addToSession = useCallback(
-    (
-      cardId: string,
-      name: string,
-      variant: { variantId: string; slug: string | null; setName: string },
-      confidence?: number,
-      rotation?: string,
-    ) => {
+    (cardId: string, name: string, variant: ResolvedVariant) => {
       setSessionItems((prev) => {
         const idx = prev.findIndex(
-          (i) => i.cardId === cardId && i.variantId === variant.variantId
+          (i) => i.cardId === cardId && i.variantId === variant.variantId,
         );
         if (idx >= 0) {
           const next = [...prev];
           next[idx] = { ...next[idx], quantity: next[idx].quantity + 1 };
-          setToastData({
-            name,
-            slug: variant.slug,
-            setName: variant.setName,
-            confidence,
-            rotation,
-            itemIndex: idx,
-          });
           return next;
         }
-        setToastData({
-          name,
-          slug: variant.slug,
-          setName: variant.setName,
-          confidence,
-          rotation,
-          itemIndex: prev.length,
-        });
         return [
           ...prev,
           {
@@ -181,15 +146,114 @@ export function ScannerView() {
             variantId: variant.variantId,
             name,
             slug: variant.slug,
+            setName: variant.setName,
+            setSlug: variant.setSlug,
+            finish: variant.finish,
+            price: variant.price,
             quantity: 1,
           },
         ];
       });
     },
-    []
+    [],
   );
 
-  // ── Frame stability ─────────────────────────────────────────────────────────
+  // ── Confirm current result (auto or manual) ───────────────────────────────
+
+  const confirmResult = useCallback(() => {
+    if (!currentResult) return;
+    addToSession(currentResult.cardId, currentResult.name, currentResult.variant);
+    currentCardIdRef.current = currentResult.cardId;
+    // Stay in result phase — don't re-scan until card changes
+  }, [currentResult, addToSession]);
+
+  // ── Start auto-confirm countdown ──────────────────────────────────────────
+
+  const startConfirmCountdown = useCallback(
+    (seconds: number) => {
+      if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
+      setConfirmCountdown(seconds);
+
+      // Countdown tick
+      let remaining = seconds;
+      const tick = () => {
+        remaining--;
+        if (remaining <= 0) {
+          confirmResult();
+          setConfirmCountdown(0);
+          return;
+        }
+        setConfirmCountdown(remaining);
+        confirmTimerRef.current = setTimeout(tick, 1000);
+      };
+      confirmTimerRef.current = setTimeout(tick, 1000);
+    },
+    [confirmResult],
+  );
+
+  // Cancel countdown on unmount
+  useEffect(() => {
+    return () => {
+      if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
+    };
+  }, []);
+
+  // ── Reject current result ─────────────────────────────────────────────────
+
+  const rejectResult = useCallback(() => {
+    if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
+    setCurrentResult(null);
+    currentCardIdRef.current = null;
+    setConfirmCountdown(0);
+    setPhase("idle");
+  }, []);
+
+  // ── Change variant on current result ──────────────────────────────────────
+
+  const changeVariant = useCallback(
+    (option: CardVariantOption) => {
+      if (!currentResult) return;
+      // Reset countdown — user is interacting
+      if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
+      setConfirmCountdown(0);
+
+      setCurrentResult((prev) =>
+        prev
+          ? {
+              ...prev,
+              variant: {
+                variantId: option.variantId,
+                slug: option.slug,
+                setName: option.setName,
+                setSlug: option.setSlug,
+                finish: option.finish,
+                price: option.price,
+              },
+            }
+          : null,
+      );
+      setShowVariantPicker(false);
+      // Restart countdown after variant change
+      startConfirmCountdown(5);
+    },
+    [currentResult, startConfirmCountdown],
+  );
+
+  // ── Open variant picker ───────────────────────────────────────────────────
+
+  const openVariantPicker = useCallback(async () => {
+    if (!currentResult) return;
+    // Pause countdown while picker is open
+    if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
+    setConfirmCountdown(0);
+
+    const { getCardVariants } = await import("@/lib/actions/scan");
+    const variants = await getCardVariants(currentResult.cardId);
+    setVariantOptions(variants);
+    setShowVariantPicker(true);
+  }, [currentResult]);
+
+  // ── Frame stability handler ───────────────────────────────────────────────
 
   const phaseRef = useRef(phase);
   phaseRef.current = phase;
@@ -204,7 +268,6 @@ export function ScannerView() {
       setPhase("scanning");
       setStabProgress(1);
 
-      // Capture cropped card region instead of full frame
       const video = videoRef.current;
       const cropCanvas = cropCanvasRef.current;
       if (!video || !cropCanvas) {
@@ -226,77 +289,108 @@ export function ScannerView() {
         );
         const result = await identifyCard(frame);
 
-        // ── Hard error (API/network) ──────────────────────────────────────────
+        // Error
         if (result.error && !result.match) {
           setErrorMsg(result.error);
           setPhase("error");
           return;
         }
 
-        // ── No detection (empty results or fallback+very low conf) ───────────
+        // No detection
         if (result.noDetection || !result.match) {
           setPhase("no-detection");
           return;
         }
 
         const { match } = result;
-        const conf = match.confidence;
 
-        // ── High confidence (≥ 0.7) → auto-add ──────────────────────────────
-        if (conf >= CONF_HIGH) {
-          const variant = await resolveVariantForCard(
-            match.cardId,
-            selectedSetSlugRef.current
-          );
-          if (!variant) {
-            setErrorMsg("Could not resolve card variant");
-            setPhase("error");
+        // Same card still in viewport — don't re-process
+        if (match.cardId === currentCardIdRef.current) {
+          setPhase("result");
+          return;
+        }
+
+        // Low confidence — treat as no detection
+        if (match.confidence < CONF_NO_DETECT) {
+          setPhase("no-detection");
+          return;
+        }
+
+        // Resolve variant
+        const variant = await resolveVariantForCard(
+          match.cardId,
+          selectedSetSlugRef.current,
+        );
+        if (!variant) {
+          setErrorMsg("Could not resolve card variant");
+          setPhase("error");
+          return;
+        }
+
+        // Show result card
+        setCurrentResult({
+          cardId: match.cardId,
+          name: match.name,
+          confidence: match.confidence,
+          variant,
+        });
+        currentCardIdRef.current = null; // Not yet confirmed
+        setPhase("result");
+
+        // Start 5-second auto-confirm countdown
+        // (can't call startConfirmCountdown here because of stale closure,
+        //  so we do it inline)
+        if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
+        setConfirmCountdown(5);
+        let remaining = 5;
+        const tick = () => {
+          remaining--;
+          if (remaining <= 0) {
+            // Auto-confirm: we need to read the latest currentResult
+            // This is handled by the confirmResult effect below
+            setConfirmCountdown(-1); // signal auto-confirm
             return;
           }
-          addToSession(match.cardId, match.name, variant, match.confidence, match.rotation);
-          setPhase("matched");
-          return;
-        }
-
-        // ── Uncertain (0.45 ≤ conf < 0.7) → show picker ──────────────────────
-        if (conf >= CONF_LOW) {
-          // Put top match first in the candidate list, then additional results
-          const allCandidates: ScanCandidate[] = [
-            {
-              cardId: match.cardId,
-              name: match.name,
-              slug: match.slug,
-              confidence: match.confidence,
-              distance: match.distance,
-              rotation: match.rotation,
-            },
-            ...result.candidates,
-          ];
-          setUncertainCandidates(allCandidates);
-          setPhase("uncertain");
-          return;
-        }
-
-        // ── Below CONF_LOW but not flagged noDetection — treat as no-detection
-        setPhase("no-detection");
+          setConfirmCountdown(remaining);
+          confirmTimerRef.current = setTimeout(tick, 1000);
+        };
+        confirmTimerRef.current = setTimeout(tick, 1000);
       } catch (e) {
         setErrorMsg(e instanceof Error ? e.message : "Scan failed");
         setPhase("error");
       }
     },
-    [addToSession]
+    [],
   );
+
+  // Auto-confirm when countdown reaches -1 (signal)
+  useEffect(() => {
+    if (confirmCountdown === -1 && currentResult) {
+      addToSession(currentResult.cardId, currentResult.name, currentResult.variant);
+      currentCardIdRef.current = currentResult.cardId;
+      setConfirmCountdown(0);
+    }
+  }, [confirmCountdown, currentResult, addToSession]);
 
   const handleMotion = useCallback(() => {
     if (phaseRef.current === "stabilizing") {
       setPhase("idle");
       setStabProgress(0);
     }
+    // If we're in result phase and card moves away, go back to scanning
+    if (phaseRef.current === "result" && currentCardIdRef.current) {
+      // Card was confirmed and now removed — reset for next card
+      if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
+      setCurrentResult(null);
+      currentCardIdRef.current = null;
+      setConfirmCountdown(0);
+      setPhase("idle");
+    }
   }, []);
 
-  // Only run stability detection when idle or stabilizing
+  // Stability detection active when idle, stabilizing, or result (to detect card swap)
   const stabilityActive =
-    ready && (phase === "idle" || phase === "stabilizing");
+    ready && (phase === "idle" || phase === "stabilizing" || phase === "result");
 
   const { resetStability } = useFrameStability(videoRef, canvasRef, {
     onStable: handleStable,
@@ -305,62 +399,30 @@ export function ScannerView() {
     holdMs: 350,
   });
 
-  // Track stabilizing progress with animation frame
-  useEffect(() => {
-    if (phase !== "idle" || !ready) return;
-    return () => {};
-  }, [phase, ready]);
-
-  // ── Auto-return to idle ─────────────────────────────────────────────────────
+  // ── Return to idle ────────────────────────────────────────────────────────
 
   const returnToIdle = useCallback(() => {
+    if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
     setPhase("idle");
     setStabProgress(0);
-    setToastData(null);
     setErrorMsg(null);
-    setUncertainCandidates([]);
+    setConfirmCountdown(0);
     resetStability();
   }, [resetStability]);
 
-  // ── Candidate pick (uncertain confidence) ───────────────────────────────────
+  // Auto-dismiss transient phases
+  useEffect(() => {
+    if (phase === "error") {
+      const t = setTimeout(returnToIdle, 2500);
+      return () => clearTimeout(t);
+    }
+    if (phase === "no-detection") {
+      const t = setTimeout(returnToIdle, 2000);
+      return () => clearTimeout(t);
+    }
+  }, [phase, returnToIdle]);
 
-  const handleCandidatePick = useCallback(
-    async (candidate: ScanCandidate) => {
-      const { resolveVariantForCard } = await import("@/lib/actions/scan");
-      const variant = await resolveVariantForCard(
-        candidate.cardId,
-        selectedSetSlugRef.current
-      );
-      if (!variant) {
-        returnToIdle();
-        return;
-      }
-      addToSession(candidate.cardId, candidate.name, variant, candidate.confidence, candidate.rotation);
-      setUncertainCandidates([]);
-      setPhase("matched");
-    },
-    [addToSession, returnToIdle]
-  );
-
-  // ── Undo last add ──────────────────────────────────────────────────────────
-
-  const handleUndo = useCallback(() => {
-    if (toastData === null) return;
-    setSessionItems((prev) => {
-      const next = [...prev];
-      const item = next[toastData.itemIndex];
-      if (!item) return next;
-      if (item.quantity <= 1) {
-        next.splice(toastData.itemIndex, 1);
-      } else {
-        next[toastData.itemIndex] = { ...item, quantity: item.quantity - 1 };
-      }
-      return next;
-    });
-    returnToIdle();
-  }, [toastData, returnToIdle]);
-
-  // ── Commit / discard ────────────────────────────────────────────────────────
+  // ── Session actions ───────────────────────────────────────────────────────
 
   const handleCommit = useCallback(() => {
     setSessionItems([]);
@@ -381,24 +443,24 @@ export function ScannerView() {
     }
   }, [sessionItems.length, router]);
 
-  // ── Auto-dismiss transient phases ──────────────────────────────────────────
+  // ── Manual confirm (tap the confirm button) ───────────────────────────────
 
-  useEffect(() => {
-    if (phase === "error") {
-      const t = setTimeout(returnToIdle, 2500);
-      return () => clearTimeout(t);
+  const handleManualConfirm = useCallback(() => {
+    if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
+    setConfirmCountdown(0);
+    if (currentResult) {
+      addToSession(currentResult.cardId, currentResult.name, currentResult.variant);
+      currentCardIdRef.current = currentResult.cardId;
     }
-    if (phase === "no-detection") {
-      const t = setTimeout(returnToIdle, 2000);
-      return () => clearTimeout(t);
-    }
-  }, [phase, returnToIdle]);
+  }, [currentResult, addToSession]);
 
-  // ── Render ──────────────────────────────────────────────────────────────────
+  // ── Render ────────────────────────────────────────────────────────────────
+
+  const isConfirmed = currentResult && currentCardIdRef.current === currentResult.cardId;
+  const totalScanned = sessionItems.reduce((s, i) => s + i.quantity, 0);
 
   return (
     <div className="fixed inset-0 z-50 bg-black flex flex-col">
-      {/* Hidden canvases for frame comparison + card crop */}
       <canvas ref={canvasRef} className="hidden" />
       <canvas ref={cropCanvasRef} className="hidden" />
 
@@ -410,11 +472,9 @@ export function ScannerView() {
           aria-label="Exit scanner"
         >
           <ArrowLeft className="h-5 w-5" />
-          <span className="hidden sm:inline">Back</span>
         </button>
 
         <div className="flex items-center gap-1">
-          {/* Set picker button */}
           <button
             onClick={() => setShowSetPicker(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 backdrop-blur-sm text-white/80 hover:text-white hover:bg-white/20 text-xs transition-colors cursor-pointer min-h-[36px]"
@@ -423,14 +483,13 @@ export function ScannerView() {
             {selectedSetSlug ?? "Any set"}
           </button>
 
-          {/* Session count */}
-          {sessionItems.length > 0 && (
+          {totalScanned > 0 && (
             <button
               onClick={() => setShowSummary(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500/20 backdrop-blur-sm text-amber-200 text-xs font-medium cursor-pointer min-h-[36px] hover:bg-amber-500/30 transition-colors"
             >
               <List className="h-3.5 w-3.5" />
-              {sessionItems.reduce((s, i) => s + i.quantity, 0)}
+              {totalScanned}
             </button>
           )}
         </div>
@@ -445,12 +504,11 @@ export function ScannerView() {
           muted
         />
 
-        {/* Guide overlay */}
         <CardGuideOverlay phase={phase} progress={stabProgress} />
 
-        {/* Status text (bottom of viewfinder) */}
-        <div className="absolute bottom-20 left-0 right-0 flex justify-center z-10">
-          {phase === "idle" && ready && (
+        {/* Status text */}
+        <div className="absolute bottom-4 left-0 right-0 flex justify-center z-10 pointer-events-none">
+          {phase === "idle" && ready && !currentResult && (
             <span className="text-white/60 text-xs bg-black/40 px-3 py-1 rounded-full backdrop-blur-sm">
               Hold a card steady in the frame
             </span>
@@ -465,56 +523,134 @@ export function ScannerView() {
               Card not detected — try repositioning
             </span>
           )}
-          {phase === "uncertain" && (
-            <span className="flex items-center gap-1.5 text-amber-300 text-xs bg-black/50 px-3 py-1.5 rounded-full backdrop-blur-sm">
-              <HelpCircle className="h-3.5 w-3.5" />
-              Uncertain match — confirm below
-            </span>
-          )}
           {phase === "error" && (
-            <button
-              onClick={returnToIdle}
-              className="flex items-center gap-1.5 text-red-300 text-xs bg-black/50 px-3 py-1.5 rounded-full backdrop-blur-sm cursor-pointer"
-            >
+            <span className="flex items-center gap-1.5 text-red-300 text-xs bg-black/50 px-3 py-1.5 rounded-full backdrop-blur-sm">
               <AlertTriangle className="h-3.5 w-3.5" />
-              {errorMsg ?? "Error"} — tap to retry
-            </button>
+              {errorMsg ?? "Error"}
+            </span>
           )}
           {phase === "permission-denied" && (
             <div className="text-center px-6">
               <Camera className="h-10 w-10 text-white/40 mx-auto mb-3" />
-              <p className="text-white/80 text-sm font-medium">
-                Camera access required
-              </p>
+              <p className="text-white/80 text-sm font-medium">Camera access required</p>
               <p className="text-white/50 text-xs mt-1">
                 Allow camera access in your browser settings to scan cards.
               </p>
             </div>
           )}
         </div>
-
-        {/* Toast (top-center, non-blocking) */}
-        {(phase === "matched" || phase === "uncertain") && toastData && (
-          <div className="absolute top-16 left-1/2 -translate-x-1/2 z-20">
-            <CardResultToast
-              name={toastData.name}
-              slug={toastData.slug}
-              setName={toastData.setName}
-              confidence={toastData.confidence}
-              rotation={toastData.rotation}
-              onDismiss={returnToIdle}
-              onUndo={handleUndo}
-            />
-          </div>
-        )}
       </div>
 
-      {/* ── Uncertain candidate picker ── */}
-      <CandidatePicker
-        candidates={uncertainCandidates}
-        open={phase === "uncertain"}
-        onPick={handleCandidatePick}
-        onSkip={returnToIdle}
+      {/* ── Result card (bottom sheet style) ── */}
+      {phase === "result" && currentResult && (
+        <div className="absolute bottom-0 left-0 right-0 z-30 animate-in slide-in-from-bottom-4 fade-in duration-200">
+          <div className="mx-3 mb-3 bg-card/95 backdrop-blur-xl border border-border rounded-2xl shadow-2xl overflow-hidden">
+            <div className="flex items-stretch gap-3 p-3">
+              {/* Card thumbnail */}
+              {currentResult.variant.slug ? (
+                <CardImage
+                  slug={currentResult.variant.slug}
+                  name={currentResult.name}
+                  width={60}
+                  height={84}
+                  className="rounded-lg shrink-0"
+                />
+              ) : (
+                <div className="w-[60px] h-[84px] rounded-lg bg-muted/30 shrink-0" />
+              )}
+
+              {/* Info column */}
+              <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5">
+                <div>
+                  <p className="text-sm font-bold truncate leading-tight font-serif text-amber-100">
+                    {currentResult.name}
+                  </p>
+
+                  {/* Variant selector (tap to change) */}
+                  <button
+                    onClick={openVariantPicker}
+                    className="flex items-center gap-1 mt-1 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                  >
+                    <span className="truncate">
+                      {currentResult.variant.setName} · {currentResult.variant.finish}
+                    </span>
+                    <ChevronDown className="h-3 w-3 shrink-0" />
+                  </button>
+                </div>
+
+                {/* Price */}
+                <div className="flex items-center gap-1 mt-1.5">
+                  <DollarSign className="h-3 w-3 text-green-400" />
+                  <span className="text-xs font-semibold text-green-400 tabular-nums">
+                    {formatPrice(currentResult.variant.price)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Action buttons */}
+              <div className="flex flex-col items-center justify-between shrink-0">
+                {!isConfirmed ? (
+                  <>
+                    {/* Confirm button with countdown */}
+                    <button
+                      onClick={handleManualConfirm}
+                      className="relative flex items-center justify-center w-12 h-12 rounded-xl bg-green-500/20 border border-green-500/30 text-green-400 hover:bg-green-500/30 transition-colors cursor-pointer"
+                      aria-label="Add to collection"
+                    >
+                      <svg className="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 48 48">
+                        <circle
+                          cx="24" cy="24" r="20"
+                          fill="none" stroke="currentColor" strokeWidth="2"
+                          strokeDasharray={Math.PI * 40}
+                          strokeDashoffset={Math.PI * 40 * (1 - confirmCountdown / 5)}
+                          opacity={0.3}
+                          className="transition-all duration-1000 linear"
+                        />
+                      </svg>
+                      <span className="text-lg font-bold">+</span>
+                    </button>
+
+                    {/* Reject button */}
+                    <button
+                      onClick={rejectResult}
+                      className="flex items-center justify-center w-8 h-8 rounded-lg text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
+                      aria-label="Skip this card"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </>
+                ) : (
+                  <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-green-500/15 border border-green-500/20">
+                    <span className="text-green-400 text-xs font-semibold">✓</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Confidence bar (subtle) */}
+            <div className="h-0.5 bg-muted/20">
+              <div
+                className={`h-full transition-all duration-300 ${
+                  currentResult.confidence >= 0.7
+                    ? "bg-green-500/60"
+                    : currentResult.confidence >= 0.45
+                    ? "bg-amber-500/60"
+                    : "bg-red-500/60"
+                }`}
+                style={{ width: `${Math.round(currentResult.confidence * 100)}%` }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Variant picker ── */}
+      <VariantPicker
+        open={showVariantPicker}
+        onOpenChange={setShowVariantPicker}
+        variants={variantOptions}
+        selectedVariantId={currentResult?.variant.variantId ?? null}
+        onSelect={changeVariant}
       />
 
       {/* ── Set picker ── */}
@@ -529,6 +665,16 @@ export function ScannerView() {
       <ScanSessionSummary
         open={showSummary}
         items={sessionItems}
+        onUpdateItem={(idx, updates) => {
+          setSessionItems((prev) => {
+            const next = [...prev];
+            next[idx] = { ...next[idx], ...updates };
+            return next;
+          });
+        }}
+        onRemoveItem={(idx) => {
+          setSessionItems((prev) => prev.filter((_, i) => i !== idx));
+        }}
         onCommit={handleCommit}
         onDiscard={handleDiscard}
         onClose={() => setShowSummary(false)}
@@ -536,3 +682,6 @@ export function ScannerView() {
     </div>
   );
 }
+
+// Confidence threshold used in stable handler
+const CONF_NO_DETECT = 0.45;

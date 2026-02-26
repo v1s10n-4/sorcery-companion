@@ -9,12 +9,16 @@ import {
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { CardImage } from "@/components/card-image";
-import { Check, FolderPlus, Loader2, Trash2 } from "lucide-react";
+import {
+  Check, FolderPlus, Loader2, Trash2, Minus, Plus, DollarSign,
+} from "lucide-react";
 import type { ScanSessionItem } from "@/lib/actions/scan";
 
 interface ScanSessionSummaryProps {
   open: boolean;
   items: ScanSessionItem[];
+  onUpdateItem: (index: number, updates: Partial<ScanSessionItem>) => void;
+  onRemoveItem: (index: number) => void;
   onCommit: () => void;
   onDiscard: () => void;
   onClose: () => void;
@@ -23,6 +27,8 @@ interface ScanSessionSummaryProps {
 export function ScanSessionSummary({
   open,
   items,
+  onUpdateItem,
+  onRemoveItem,
   onCommit,
   onDiscard,
   onClose,
@@ -32,6 +38,10 @@ export function ScanSessionSummary({
   const [addedCount, setAddedCount] = useState(0);
 
   const totalQty = items.reduce((sum, i) => sum + i.quantity, 0);
+  const totalValue = items.reduce(
+    (sum, i) => sum + (i.price ?? 0) * i.quantity,
+    0,
+  );
 
   const handleCommit = () => {
     startTransition(async () => {
@@ -50,9 +60,11 @@ export function ScanSessionSummary({
 
   return (
     <Sheet open={open} onOpenChange={(v) => !v && handleClose()}>
-      <SheetContent side="bottom" className="max-h-[75vh] flex flex-col rounded-t-xl">
+      <SheetContent
+        side="bottom"
+        className="max-h-[80vh] flex flex-col rounded-t-xl"
+      >
         {done ? (
-          /* ── Success state ── */
           <div className="flex-1 flex flex-col items-center justify-center gap-4 py-8">
             <div className="h-16 w-16 rounded-full bg-green-500/15 border border-green-500/30 flex items-center justify-center">
               <Check className="h-8 w-8 text-green-400" />
@@ -65,50 +77,102 @@ export function ScanSessionSummary({
                 Your collection has been updated.
               </p>
             </div>
-            <Button className="mt-2" onClick={handleClose}>
+            <Button className="mt-2" onClick={() => { onCommit(); handleClose(); }}>
               Done
             </Button>
           </div>
         ) : (
           <>
             <SheetHeader className="shrink-0 pb-3 border-b border-border/60">
-              <SheetTitle>
-                Session Summary
-              </SheetTitle>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {items.length} card{items.length !== 1 ? "s" : ""} scanned
-                {totalQty !== items.length ? ` (${totalQty} total)` : ""}
-              </p>
+              <SheetTitle>Scanned Cards</SheetTitle>
+              <div className="flex items-center justify-between mt-1">
+                <p className="text-xs text-muted-foreground">
+                  {items.length} card{items.length !== 1 ? "s" : ""}
+                  {totalQty !== items.length ? ` · ${totalQty} total` : ""}
+                </p>
+                {totalValue > 0 && (
+                  <p className="flex items-center gap-0.5 text-xs text-green-400 font-semibold tabular-nums">
+                    <DollarSign className="h-3 w-3" />
+                    {totalValue.toFixed(2)}
+                  </p>
+                )}
+              </div>
             </SheetHeader>
 
             {items.length === 0 ? (
               <div className="flex-1 flex items-center justify-center">
-                <p className="text-sm text-muted-foreground">No cards scanned yet.</p>
+                <p className="text-sm text-muted-foreground">
+                  No cards scanned yet.
+                </p>
               </div>
             ) : (
               <div className="flex-1 overflow-y-auto py-3 space-y-2">
                 {items.map((item, i) => (
                   <div
-                    key={`${item.cardId}-${i}`}
-                    className="flex items-center gap-3 px-2 py-2 rounded-lg border border-border/40 bg-card"
+                    key={`${item.cardId}-${item.variantId}-${i}`}
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-border/40 bg-card"
                   >
                     {item.slug ? (
                       <CardImage
                         slug={item.slug}
                         name={item.name}
-                        width={36}
-                        height={50}
+                        width={40}
+                        height={56}
                         className="rounded-sm shrink-0"
                       />
                     ) : (
-                      <div className="w-9 h-[50px] rounded-sm bg-muted/30 shrink-0" />
+                      <div className="w-10 h-[56px] rounded-sm bg-muted/30 shrink-0" />
                     )}
+
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold truncate">{item.name}</p>
+                      <p className="text-sm font-semibold truncate">
+                        {item.name}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground truncate">
+                        {item.setName} · {item.finish}
+                      </p>
+                      {item.price != null && (
+                        <p className="flex items-center gap-0.5 text-[10px] text-green-400 tabular-nums mt-0.5">
+                          <DollarSign className="h-2.5 w-2.5" />
+                          {item.price.toFixed(2)}
+                        </p>
+                      )}
                     </div>
-                    <span className="text-sm font-bold tabular-nums text-amber-300 shrink-0">
-                      ×{item.quantity}
-                    </span>
+
+                    {/* Quantity controls */}
+                    <div className="shrink-0 flex items-center gap-1">
+                      <button
+                        onClick={() => {
+                          if (item.quantity <= 1) {
+                            onRemoveItem(i);
+                          } else {
+                            onUpdateItem(i, { quantity: item.quantity - 1 });
+                          }
+                        }}
+                        className="flex items-center justify-center w-7 h-7 rounded-lg bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                        aria-label="Decrease quantity"
+                      >
+                        {item.quantity <= 1 ? (
+                          <Trash2 className="h-3 w-3 text-red-400" />
+                        ) : (
+                          <Minus className="h-3 w-3" />
+                        )}
+                      </button>
+
+                      <span className="text-sm font-bold tabular-nums text-amber-300 w-6 text-center">
+                        {item.quantity}
+                      </span>
+
+                      <button
+                        onClick={() =>
+                          onUpdateItem(i, { quantity: item.quantity + 1 })
+                        }
+                        className="flex items-center justify-center w-7 h-7 rounded-lg bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                        aria-label="Increase quantity"
+                      >
+                        <Plus className="h-3 w-3" />
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -130,11 +194,14 @@ export function ScanSessionSummary({
               <Button
                 variant="ghost"
                 className="w-full text-muted-foreground gap-1.5"
-                onClick={() => { onDiscard(); handleClose(); }}
+                onClick={() => {
+                  onDiscard();
+                  handleClose();
+                }}
                 disabled={isPending}
               >
                 <Trash2 className="h-4 w-4" />
-                Discard session
+                Discard all
               </Button>
             </div>
           </>
