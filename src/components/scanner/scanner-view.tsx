@@ -766,52 +766,69 @@ export function ScannerView() {
 
       {/* ── Suggestions strip (low confidence) ── */}
       {phase === "suggestions" && suggestions.length > 0 && (
-        <div className="absolute bottom-0 left-0 right-0 z-30 animate-in slide-in-from-bottom-4 fade-in duration-200">
-          <div className="mx-3 mb-3">
-            {/* Header with dismiss */}
-            <div className="flex items-center justify-between mb-2 px-1">
-              <span className="text-xs text-amber-300/80 font-medium">
-                Is this one of these?
-              </span>
-              <button
-                onClick={dismissSuggestions}
-                className="text-xs text-muted-foreground hover:text-white transition-colors cursor-pointer px-2 py-1"
-              >
-                Dismiss
-              </button>
-            </div>
+        <div className="absolute bottom-0 left-0 right-0 z-30 flex flex-col items-center animate-in slide-in-from-bottom-4 fade-in duration-200 mb-6">
+          {/* Suggestion cards */}
+          <div className="flex gap-2 px-3">
+            {suggestions.map((s) => {
+              const pct = Math.round(s.confidence * 100);
+              const color =
+                s.confidence >= 0.6 ? "text-green-400 stroke-green-400"
+                : s.confidence >= 0.4 ? "text-amber-400 stroke-amber-400"
+                : "text-red-400 stroke-red-400";
+              const circumference = Math.PI * 28; // r=14
+              const offset = circumference * (1 - s.confidence);
 
-            {/* Card suggestions */}
-            <div className="flex gap-2">
-              {suggestions.map((s) => (
+              return (
                 <button
                   key={s.cardId}
                   onClick={() => handleSuggestionPick(s.cardId, s.name)}
-                  className="flex-1 flex items-center gap-2.5 bg-card/95 backdrop-blur-xl border border-border rounded-xl shadow-2xl p-2.5 hover:bg-card transition-colors cursor-pointer min-h-[68px]"
+                  className="relative bg-card/95 backdrop-blur-xl border border-border rounded-xl shadow-2xl p-1.5 hover:bg-card active:scale-95 transition-all cursor-pointer"
                 >
                   {s.slug ? (
                     <CardImage
                       slug={s.slug}
                       name={s.name}
-                      width={36}
-                      height={50}
-                      className="rounded-sm shrink-0"
+                      width={64}
+                      height={89}
+                      className="rounded-lg"
                     />
                   ) : (
-                    <div className="w-9 h-[50px] rounded-sm bg-muted/30 shrink-0" />
+                    <div className="w-16 h-[89px] rounded-lg bg-muted/30" />
                   )}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold truncate leading-tight">
-                      {s.name}
-                    </p>
-                    <p className="text-[10px] text-muted-foreground tabular-nums mt-0.5">
-                      {Math.round(s.confidence * 100)}%
-                    </p>
+                  {/* Confidence ring */}
+                  <div className="absolute -bottom-2 -right-2 w-8 h-8 rounded-full bg-black/80 backdrop-blur-sm flex items-center justify-center">
+                    <svg className="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 32 32">
+                      <circle
+                        cx="16" cy="16" r="14"
+                        fill="none" strokeWidth="2"
+                        className="stroke-white/10"
+                      />
+                      <circle
+                        cx="16" cy="16" r="14"
+                        fill="none" strokeWidth="2"
+                        strokeDasharray={circumference}
+                        strokeDashoffset={offset}
+                        strokeLinecap="round"
+                        className={color.split(" ")[1]}
+                      />
+                    </svg>
+                    <span className={`text-[8px] font-bold tabular-nums ${color.split(" ")[0]}`}>
+                      {pct}
+                    </span>
                   </div>
                 </button>
-              ))}
-            </div>
+              );
+            })}
           </div>
+
+          {/* Dismiss FAB */}
+          <button
+            onClick={dismissSuggestions}
+            className="mt-3 flex items-center justify-center w-10 h-10 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 text-white/70 hover:text-white hover:bg-white/20 transition-colors cursor-pointer shadow-lg"
+            aria-label="Dismiss suggestions"
+          >
+            <X className="h-5 w-5" />
+          </button>
         </div>
       )}
 
