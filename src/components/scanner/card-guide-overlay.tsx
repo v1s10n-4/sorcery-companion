@@ -8,7 +8,15 @@
  *   progress — 0..1 stabilizing progress
  */
 
-type Phase = "idle" | "stabilizing" | "scanning" | "matched" | "error" | "permission-denied";
+type Phase =
+  | "idle"
+  | "stabilizing"
+  | "scanning"
+  | "matched"
+  | "uncertain"
+  | "no-detection"
+  | "error"
+  | "permission-denied";
 
 interface CardGuideOverlayProps {
   phase: Phase;
@@ -39,10 +47,12 @@ const ringPerim = 2 * (ringW + ringH) - (8 - 2 * Math.PI) * (R + RING_PAD);
 
 const phaseColors: Record<string, string> = {
   idle: "rgba(255,255,255,0.35)",
-  stabilizing: "#f59e0b", // amber-400
-  scanning: "#60a5fa",   // blue-400
-  matched: "#4ade80",    // green-400
-  error: "#f87171",      // red-400
+  stabilizing: "#f59e0b",          // amber-400
+  scanning: "#60a5fa",             // blue-400
+  matched: "#4ade80",              // green-400
+  uncertain: "#fbbf24",            // amber-300 — softer than stabilizing
+  "no-detection": "rgba(255,255,255,0.25)", // very muted — don't alarm
+  error: "#f87171",                // red-400
   "permission-denied": "#f87171",
 };
 
@@ -53,12 +63,18 @@ export function CardGuideOverlay({ phase, progress = 0 }: CardGuideOverlayProps)
   const dashOffset =
     phase === "stabilizing"
       ? ringPerim * (1 - progress)
-      : phase === "scanning" || phase === "matched"
+      : phase === "scanning" || phase === "matched" || phase === "uncertain"
       ? 0
       : ringPerim;
 
   const ringOpacity =
-    phase === "idle" ? 0 : phase === "error" || phase === "permission-denied" ? 0.6 : 1;
+    phase === "idle"
+      ? 0
+      : phase === "no-detection"
+      ? 0.35
+      : phase === "error" || phase === "permission-denied"
+      ? 0.6
+      : 1;
 
   return (
     <svg

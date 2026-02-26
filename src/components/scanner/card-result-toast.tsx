@@ -1,13 +1,17 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { Check, Undo2 } from "lucide-react";
+import { Check, Undo2, RotateCw } from "lucide-react";
 import { CardImage } from "@/components/card-image";
 
 interface CardResultToastProps {
   name: string;
   slug: string | null;
   setName?: string;
+  /** "0°" | "90°" | "180°" | "270°" — show badge if not upright */
+  rotation?: string;
+  /** Confidence 0..1 — shown if < HIGH threshold (uncertain adds) */
+  confidence?: number;
   /** Auto-dismiss after this many ms. Default: 3000 */
   durationMs?: number;
   onDismiss: () => void;
@@ -18,10 +22,14 @@ export function CardResultToast({
   name,
   slug,
   setName,
+  rotation,
+  confidence,
   durationMs = 3000,
   onDismiss,
   onUndo,
 }: CardResultToastProps) {
+  const isRotated = rotation && rotation !== "0°";
+  const isUncertain = typeof confidence === "number" && confidence < 0.7;
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -59,9 +67,15 @@ export function CardResultToast({
 
       {/* Info */}
       <div className="flex-1 min-w-0">
-        <p className="text-xs font-medium text-green-400 flex items-center gap-1">
+        <p className={`text-xs font-medium flex items-center gap-1 ${isUncertain ? "text-amber-400" : "text-green-400"}`}>
           <Check className="h-3 w-3 shrink-0" />
-          Added
+          {isUncertain ? `Added (${Math.round((confidence ?? 0) * 100)}%)` : "Added"}
+          {isRotated && (
+            <span className="flex items-center gap-0.5 text-[9px] text-muted-foreground ml-1">
+              <RotateCw className="h-2.5 w-2.5" />
+              {rotation}
+            </span>
+          )}
         </p>
         <p className="text-sm font-semibold truncate leading-tight">{name}</p>
         {setName && (

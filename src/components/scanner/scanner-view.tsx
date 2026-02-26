@@ -2,14 +2,15 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Camera, Layers, List, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Camera, Layers, List, AlertTriangle, HelpCircle } from "lucide-react";
 import { useCamera } from "@/hooks/use-camera";
 import { useFrameStability } from "@/hooks/use-frame-stability";
 import { CardGuideOverlay, SVG_W, SVG_H, CARD_W, CARD_H } from "./card-guide-overlay";
 import { CardResultToast } from "./card-result-toast";
+import { CandidatePicker } from "./candidate-picker";
 import { SetPicker, getStoredScanSet } from "./set-picker";
 import { ScanSessionSummary } from "./scan-session-summary";
-import type { ScanSessionItem } from "@/lib/actions/scan";
+import type { ScanCandidate, ScanSessionItem } from "@/lib/actions/scan";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -17,11 +18,15 @@ type Phase =
   | "idle"
   | "stabilizing"
   | "scanning"
-  | "matched"
-  | "error"
+  | "matched"      // conf ≥ 0.7, auto-added, showing green toast
+  | "uncertain"    // 0.45 ≤ conf < 0.7, showing candidate picker for confirmation
+  | "no-detection" // no card found or too low — brief feedback, then auto-idle
+  | "error"        // API / network failure
   | "permission-denied";
 
-const CONFIDENCE_THRESHOLD = 0.85;
+// Mirrors thresholds in scan.ts
+const CONF_HIGH = 0.7;
+const CONF_LOW = 0.45;
 
 // ── Card region crop helpers ───────────────────────────────────────────────────
 
@@ -106,9 +111,13 @@ export function ScannerView() {
     name: string;
     slug: string | null;
     setName?: string;
+    confidence?: number;
+    rotation?: string;
     itemIndex: number;
   } | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  // Candidates for uncertain-confidence picker
+  const [uncertainCandidates, setUncertainCandidates] = useState<ScanCandidate[]>([]);
 
   // Session
   const [sessionItems, setSessionItems] = useState<ScanSessionItem[]>([]);
@@ -129,6 +138,56 @@ export function ScannerView() {
       if (err.kind === "permission-denied") setPhase("permission-denied");
     },
   });
+
+  // ── Add a card to the scan session ─────────────────────────────────────────
+
+  const addToSession = useCallback(
+    (
+      cardId: string,
+      name: string,
+      variant: { variantId: string; slug: string | null; setName: string },
+      confidence?: number,
+      rotation?: string,
+    ) => {
+      setSessionItems((prev) => {
+        const idx = prev.findIndex(
+          (i) => i.cardId === cardId && i.variantId === variant.variantId
+        );
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = { ...next[idx], quantity: next[idx].quantity + 1 };
+          setToastData({
+            name,
+            slug: variant.slug,
+            setName: variant.setName,
+            confidence,
+            rotation,
+            itemIndex: idx,
+          });
+          return next;
+        }
+        setToastData({
+          name,
+          slug: variant.slug,
+          setName: variant.setName,
+          confidence,
+          rotation,
+          itemIndex: prev.length,
+        });
+        return [
+          ...prev,
+          {
+            cardId,
+            variantId: variant.variantId,
+            name,
+            slug: variant.slug,
+            quantity: 1,
+          },
+        ];
+      });
+    },
+    []
+  );
 
   // ── Frame stability ─────────────────────────────────────────────────────────
 
@@ -167,19 +226,26 @@ export function ScannerView() {
         );
         const result = await identifyCard(frame);
 
-        if (result.error) {
+        // ── Hard error (API/network) ──────────────────────────────────────────
+        if (result.error && !result.match) {
           setErrorMsg(result.error);
           setPhase("error");
           return;
         }
 
-        if (
-          result.match &&
-          result.match.confidence >= CONFIDENCE_THRESHOLD
-        ) {
-          // ── High confidence → auto-add ──
+        // ── No detection (empty results or fallback+very low conf) ───────────
+        if (result.noDetection || !result.match) {
+          setPhase("no-detection");
+          return;
+        }
+
+        const { match } = result;
+        const conf = match.confidence;
+
+        // ── High confidence (≥ 0.7) → auto-add ──────────────────────────────
+        if (conf >= CONF_HIGH) {
           const variant = await resolveVariantForCard(
-            result.match.cardId,
+            match.cardId,
             selectedSetSlugRef.current
           );
           if (!variant) {
@@ -187,56 +253,38 @@ export function ScannerView() {
             setPhase("error");
             return;
           }
-
-          setSessionItems((prev) => {
-            const idx = prev.findIndex(
-              (i) =>
-                i.cardId === result.match!.cardId &&
-                i.variantId === variant.variantId
-            );
-            if (idx >= 0) {
-              const next = [...prev];
-              next[idx] = { ...next[idx], quantity: next[idx].quantity + 1 };
-              setToastData({
-                name: result.match!.name,
-                slug: variant.slug,
-                setName: variant.setName,
-                itemIndex: idx,
-              });
-              return next;
-            }
-            const newItem: ScanSessionItem = {
-              cardId: result.match!.cardId,
-              variantId: variant.variantId,
-              name: result.match!.name,
-              slug: variant.slug,
-              quantity: 1,
-            };
-            setToastData({
-              name: result.match!.name,
-              slug: variant.slug,
-              setName: variant.setName,
-              itemIndex: prev.length,
-            });
-            return [...prev, newItem];
-          });
-
+          addToSession(match.cardId, match.name, variant, match.confidence, match.rotation);
           setPhase("matched");
-        } else {
-          // ── Low confidence → skip, retry automatically ──
-          setErrorMsg(
-            result.match
-              ? `Low confidence (${Math.round(result.match.confidence * 100)}%) — move card closer`
-              : "Card not recognized"
-          );
-          setPhase("error");
+          return;
         }
+
+        // ── Uncertain (0.45 ≤ conf < 0.7) → show picker ──────────────────────
+        if (conf >= CONF_LOW) {
+          // Put top match first in the candidate list, then additional results
+          const allCandidates: ScanCandidate[] = [
+            {
+              cardId: match.cardId,
+              name: match.name,
+              slug: match.slug,
+              confidence: match.confidence,
+              distance: match.distance,
+              rotation: match.rotation,
+            },
+            ...result.candidates,
+          ];
+          setUncertainCandidates(allCandidates);
+          setPhase("uncertain");
+          return;
+        }
+
+        // ── Below CONF_LOW but not flagged noDetection — treat as no-detection
+        setPhase("no-detection");
       } catch (e) {
         setErrorMsg(e instanceof Error ? e.message : "Scan failed");
         setPhase("error");
       }
     },
-    []
+    [addToSession]
   );
 
   const handleMotion = useCallback(() => {
@@ -263,15 +311,36 @@ export function ScannerView() {
     return () => {};
   }, [phase, ready]);
 
-  // ── Auto-return to idle after matched toast ─────────────────────────────────
+  // ── Auto-return to idle ─────────────────────────────────────────────────────
 
   const returnToIdle = useCallback(() => {
     setPhase("idle");
     setStabProgress(0);
     setToastData(null);
     setErrorMsg(null);
+    setUncertainCandidates([]);
     resetStability();
   }, [resetStability]);
+
+  // ── Candidate pick (uncertain confidence) ───────────────────────────────────
+
+  const handleCandidatePick = useCallback(
+    async (candidate: ScanCandidate) => {
+      const { resolveVariantForCard } = await import("@/lib/actions/scan");
+      const variant = await resolveVariantForCard(
+        candidate.cardId,
+        selectedSetSlugRef.current
+      );
+      if (!variant) {
+        returnToIdle();
+        return;
+      }
+      addToSession(candidate.cardId, candidate.name, variant, candidate.confidence, candidate.rotation);
+      setUncertainCandidates([]);
+      setPhase("matched");
+    },
+    [addToSession, returnToIdle]
+  );
 
   // ── Undo last add ──────────────────────────────────────────────────────────
 
@@ -312,12 +381,17 @@ export function ScannerView() {
     }
   }, [sessionItems.length, router]);
 
-  // ── Auto-dismiss error after 2s ─────────────────────────────────────────────
+  // ── Auto-dismiss transient phases ──────────────────────────────────────────
 
   useEffect(() => {
-    if (phase !== "error") return;
-    const timer = setTimeout(returnToIdle, 2000);
-    return () => clearTimeout(timer);
+    if (phase === "error") {
+      const t = setTimeout(returnToIdle, 2500);
+      return () => clearTimeout(t);
+    }
+    if (phase === "no-detection") {
+      const t = setTimeout(returnToIdle, 2000);
+      return () => clearTimeout(t);
+    }
   }, [phase, returnToIdle]);
 
   // ── Render ──────────────────────────────────────────────────────────────────
@@ -386,6 +460,17 @@ export function ScannerView() {
               Identifying…
             </span>
           )}
+          {phase === "no-detection" && (
+            <span className="text-white/70 text-xs bg-black/50 px-3 py-1.5 rounded-full backdrop-blur-sm">
+              Card not detected — try repositioning
+            </span>
+          )}
+          {phase === "uncertain" && (
+            <span className="flex items-center gap-1.5 text-amber-300 text-xs bg-black/50 px-3 py-1.5 rounded-full backdrop-blur-sm">
+              <HelpCircle className="h-3.5 w-3.5" />
+              Uncertain match — confirm below
+            </span>
+          )}
           {phase === "error" && (
             <button
               onClick={returnToIdle}
@@ -409,18 +494,28 @@ export function ScannerView() {
         </div>
 
         {/* Toast (top-center, non-blocking) */}
-        {phase === "matched" && toastData && (
+        {(phase === "matched" || phase === "uncertain") && toastData && (
           <div className="absolute top-16 left-1/2 -translate-x-1/2 z-20">
             <CardResultToast
               name={toastData.name}
               slug={toastData.slug}
               setName={toastData.setName}
+              confidence={toastData.confidence}
+              rotation={toastData.rotation}
               onDismiss={returnToIdle}
               onUndo={handleUndo}
             />
           </div>
         )}
       </div>
+
+      {/* ── Uncertain candidate picker ── */}
+      <CandidatePicker
+        candidates={uncertainCandidates}
+        open={phase === "uncertain"}
+        onPick={handleCandidatePick}
+        onSkip={returnToIdle}
+      />
 
       {/* ── Set picker ── */}
       <SetPicker

@@ -11,6 +11,9 @@ export interface ScanCandidate {
   name: string;
   slug: string | null;
   confidence: number;
+  distance: number;
+  rotation: string;
+  /** Populated after variant resolution for display in picker */
   setName?: string;
 }
 
@@ -18,11 +21,19 @@ export interface ScanResult {
   match: {
     cardId: string;
     name: string;
+    /** Variant slug from the lens API (for image display) */
     slug: string | null;
     confidence: number;
+    distance: number;
+    rotation: string;
   } | null;
+  /** Additional results for uncertain-confidence picker */
   candidates: ScanCandidate[];
+  /** "detected" = card contour found; "fallback" = center-crop guess */
+  method: "detected" | "fallback" | null;
   latencyMs: number;
+  /** True when results are empty OR method=fallback AND conf < CONF_NO_DETECT */
+  noDetection: boolean;
   error?: string;
 }
 
@@ -41,12 +52,35 @@ export interface ScanSet {
   cardCount: number;
 }
 
+// ── Confidence thresholds (mirrors scanner-view.tsx) ──────────────────────────
+const CONF_HIGH = 0.7;       // ≥ 0.7 → auto-add
+const CONF_NO_DETECT = 0.45; // < 0.45 → no detection, don't even show a result
+
+// ── Raw API shape from sorcery-lens ──────────────────────────────────────────
+interface LensApiEntry {
+  cardId: string;
+  name: string;
+  slug: string;
+  distance: number;
+  confidence: number;
+  rotation: string;
+}
+
+interface LensApiResponse {
+  results: LensApiEntry[];
+  method: "detected" | "fallback";
+  time_ms: number;
+}
+
+// ── Sleep helper for retry backoff ────────────────────────────────────────────
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 // ── Identify card via sorcery-lens ─────────────────────────────────────────────
 
 /**
  * Send a JPEG frame (base64-encoded) to sorcery-lens for identification.
  * POSTs as multipart/form-data with Bearer auth.
- * Returns the top match + up to 3 candidates.
+ * Retries up to 3× on 429 with exponential backoff (1s → 2s → 4s).
  * Gracefully returns an error result if the service is unavailable.
  */
 export async function identifyCard(frameBase64: string): Promise<ScanResult> {
@@ -57,55 +91,146 @@ export async function identifyCard(frameBase64: string): Promise<ScanResult> {
     return {
       match: null,
       candidates: [],
+      method: null,
       latencyMs: 0,
+      noDetection: true,
       error: "Scanner service not configured",
     };
   }
 
+  // Convert base64 → Buffer → Blob for FormData
+  const buffer = Buffer.from(frameBase64, "base64");
+  const blob = new Blob([buffer], { type: "image/jpeg" });
+
+  const headers: Record<string, string> = {};
+  if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+
+  const MAX_RETRIES = 3;
+  let attempt = 0;
   const t0 = Date.now();
-  try {
-    // Convert base64 → Buffer → Blob for FormData
-    const buffer = Buffer.from(frameBase64, "base64");
-    const blob = new Blob([buffer], { type: "image/jpeg" });
-    const formData = new FormData();
-    formData.append("image", blob, "frame.jpg");
 
-    const headers: Record<string, string> = {};
-    if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+  while (attempt <= MAX_RETRIES) {
+    try {
+      const formData = new FormData();
+      formData.append("image", blob, "frame.jpg");
 
-    const res = await fetch(`${lensUrl}/identify`, {
-      method: "POST",
-      headers,
-      body: formData,
-      signal: AbortSignal.timeout(8000),
-    });
+      const res = await fetch(`${lensUrl}/identify`, {
+        method: "POST",
+        headers,
+        body: formData,
+        signal: AbortSignal.timeout(8000),
+      });
 
-    const latencyMs = Date.now() - t0;
+      const latencyMs = Date.now() - t0;
 
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
+      // ── HTTP error handling ────────────────────────────────────────────────
+      if (!res.ok) {
+        if (res.status === 429) {
+          // Rate limited — exponential backoff then retry
+          if (attempt < MAX_RETRIES) {
+            await sleep(1000 * Math.pow(2, attempt));
+            attempt++;
+            continue;
+          }
+          return {
+            match: null, candidates: [], method: null, latencyMs,
+            noDetection: true,
+            error: "Too many requests — please wait a moment",
+          };
+        }
+
+        const errMsg =
+          res.status === 401
+            ? "Invalid API key"
+            : res.status === 422
+            ? "Invalid image — try a different photo"
+            : res.status === 503
+            ? "Scanner temporarily unavailable"
+            : `Scanner error (${res.status})`;
+
+        return {
+          match: null, candidates: [], method: null, latencyMs,
+          noDetection: true,
+          error: errMsg,
+        };
+      }
+
+      // ── Parse new response format ──────────────────────────────────────────
+      const data: LensApiResponse = await res.json();
+      const results = data.results ?? [];
+      const method = data.method ?? "fallback";
+
+      // Empty results → no detection
+      if (results.length === 0) {
+        return {
+          match: null, candidates: [], method, latencyMs,
+          noDetection: true,
+        };
+      }
+
+      const top = results[0];
+      const conf = top.confidence;
+
+      // Fallback method + very low confidence → treat as no detection
+      if (method === "fallback" && conf < CONF_NO_DETECT) {
+        return {
+          match: null, candidates: [], method, latencyMs,
+          noDetection: true,
+        };
+      }
+
+      // Build match from top result
+      const match: ScanResult["match"] = {
+        cardId: top.cardId,
+        name: top.name,
+        slug: top.slug ?? null,
+        confidence: conf,
+        distance: top.distance,
+        rotation: top.rotation,
+      };
+
+      // Build candidates from remaining results (for uncertain-confidence picker)
+      const candidates: ScanCandidate[] = results.slice(1, 4).map((r) => ({
+        cardId: r.cardId,
+        name: r.name,
+        slug: r.slug ?? null,
+        confidence: r.confidence,
+        distance: r.distance,
+        rotation: r.rotation,
+      }));
+
+      // noDetection is false at this point — we have a usable result
+      return { match, candidates, method, latencyMs, noDetection: false };
+    } catch (e) {
+      // Network / timeout errors
+      const latencyMs = Date.now() - t0;
+      const msg = e instanceof Error ? e.message : "Scanner unavailable";
+
+      // Retry on timeout if we have attempts left
+      if (attempt < MAX_RETRIES && (msg.includes("timeout") || msg.includes("fetch"))) {
+        await sleep(1000 * Math.pow(2, attempt));
+        attempt++;
+        continue;
+      }
+
+      const userMsg = msg.includes("timeout")
+        ? "Connection lost, retrying…"
+        : "Scanner unavailable";
+
       return {
-        match: null,
-        candidates: [],
-        latencyMs,
-        error: `Scanner error (${res.status})${body ? `: ${body.slice(0, 80)}` : ""}`,
+        match: null, candidates: [], method: null, latencyMs,
+        noDetection: true,
+        error: userMsg,
       };
     }
-
-    const data = await res.json();
-    return {
-      match: data.match ?? null,
-      candidates: data.candidates ?? [],
-      latencyMs,
-    };
-  } catch (e) {
-    return {
-      match: null,
-      candidates: [],
-      latencyMs: Date.now() - t0,
-      error: e instanceof Error ? e.message : "Scanner unavailable",
-    };
   }
+
+  // Should never reach here
+  return {
+    match: null, candidates: [], method: null, latencyMs: Date.now() - t0,
+    noDetection: true,
+    error: "Scanner unavailable",
+  };
 }
 
 // ── Resolve which variant to use for a scanned card ───────────────────────────
