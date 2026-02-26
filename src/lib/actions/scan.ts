@@ -356,10 +356,39 @@ export async function getCardVariants(cardId: string): Promise<CardVariantOption
   }));
 }
 
-// ── Get available sets ───────────────────────────────────────────────────────
+// ── Get ALL sets (for the session-wide set locker) ──────────────────────────
 
 export async function getScanSets(): Promise<ScanSet[]> {
   const sets = await prisma.set.findMany({
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+      _count: { select: { cardSets: true } },
+    },
+    orderBy: { releasedAt: "desc" },
+  });
+
+  return sets.map((s) => ({
+    id: s.id,
+    name: s.name,
+    slug: s.slug,
+    cardCount: s._count.cardSets,
+  }));
+}
+
+// ── Get sets where a specific card exists (for per-card set picker) ─────────
+
+export async function getSetsForCard(cardId: string): Promise<ScanSet[]> {
+  // Find all sets that have at least one variant of this card
+  const sets = await prisma.set.findMany({
+    where: {
+      cardSets: {
+        some: {
+          variants: { some: { cardId } },
+        },
+      },
+    },
     select: {
       id: true,
       name: true,

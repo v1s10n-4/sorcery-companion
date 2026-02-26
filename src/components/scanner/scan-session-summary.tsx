@@ -13,8 +13,8 @@ import {
   Check, FolderPlus, Loader2, Trash2, Minus, Plus,
   DollarSign, ChevronDown, Sparkles,
 } from "lucide-react";
-import { SetPicker } from "./set-picker";
-import type { ScanSessionItem, ResolvedVariant } from "@/lib/actions/scan";
+import { CardSetPicker } from "./card-set-picker";
+import type { ScanSessionItem } from "@/lib/actions/scan";
 
 interface ScanSessionSummaryProps {
   open: boolean;
@@ -294,13 +294,15 @@ export function ScanSessionSummary({
         </SheetContent>
       </Sheet>
 
-      {/* Per-item set picker */}
-      <SetPicker
+      {/* Per-item set picker (only shows sets this card exists in) */}
+      <CardSetPicker
         open={showItemSetPicker}
         onOpenChange={(v) => {
           setShowItemSetPicker(v);
           if (!v) setEditingIdx(null);
         }}
+        cardId={editingIdx !== null ? items[editingIdx]?.cardId ?? null : null}
+        cardName={editingIdx !== null ? items[editingIdx]?.name : undefined}
         selectedSetSlug={
           editingIdx !== null ? items[editingIdx]?.setSlug ?? null : null
         }

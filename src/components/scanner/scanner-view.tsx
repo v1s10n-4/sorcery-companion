@@ -10,6 +10,7 @@ import { useCamera } from "@/hooks/use-camera";
 import { useFrameStability } from "@/hooks/use-frame-stability";
 import { CardGuideOverlay, SVG_W, SVG_H, CARD_W, CARD_H, type ScanPhase } from "./card-guide-overlay";
 import { SetPicker, getStoredScanSet } from "./set-picker";
+import { CardSetPicker } from "./card-set-picker";
 import { ScanSessionSummary } from "./scan-session-summary";
 import { CardImage } from "@/components/card-image";
 import type {
@@ -112,6 +113,9 @@ export function ScannerView() {
 
   // Foil toggle state
   const [hasFoil, setHasFoil] = useState(false);
+
+  // Card-specific set picker (result card)
+  const [showCardSetPicker, setShowCardSetPicker] = useState(false);
 
   useEffect(() => {
     setSelectedSetSlug(getStoredScanSet());
@@ -227,10 +231,10 @@ export function ScannerView() {
     startConfirmCountdown(5);
   }, [currentResult, startConfirmCountdown]);
 
-  // ── Change set on current result (from set picker) ────────────────────────
+  // ── Change set on current result (from card-specific set picker) ────────
 
   const handleResultSetChange = useCallback(
-    async (setSlug: string | null) => {
+    async (setSlug: string) => {
       if (!currentResult) return;
       if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
       setConfirmCountdown(0);
@@ -315,13 +319,15 @@ export function ScannerView() {
           return;
         }
 
-        // Resolve variant (standard finish, latest set)
+        // Resolve variant (standard finish, latest set or locked set)
         const { resolveVariantForCard: resolve, hasFoilVariant: checkFoil } =
           await import("@/lib/actions/scan");
-        const variant = await resolve(match.cardId, selectedSetSlugRef.current);
-        if (!variant) {
-          setErrorMsg("Could not resolve card variant");
-          setPhase("error");
+        const lockedSet = selectedSetSlugRef.current;
+        const variant = await resolve(match.cardId, lockedSet);
+
+        // If a set is locked and the card doesn't exist in that set, skip it
+        if (!variant || (lockedSet && variant.setSlug !== lockedSet)) {
+          setPhase("no-detection");
           return;
         }
 
@@ -568,10 +574,14 @@ export function ScannerView() {
                     {currentResult.name}
                   </p>
 
-                  {/* Set (tappable to change) + foil toggle */}
+                  {/* Set (tappable — shows only sets this card exists in) + foil toggle */}
                   <div className="flex items-center gap-1.5 mt-1">
                     <button
-                      onClick={() => setShowSetPicker(true)}
+                      onClick={() => {
+                        if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
+                        setConfirmCountdown(0);
+                        setShowCardSetPicker(true);
+                      }}
                       className="flex items-center gap-0.5 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
                     >
                       <span className="truncate max-w-[120px]">
@@ -663,18 +673,28 @@ export function ScannerView() {
         </div>
       )}
 
-      {/* ── Set picker ── */}
+      {/* ── Set locker (session-wide, all sets) ── */}
       <SetPicker
         open={showSetPicker}
         onOpenChange={setShowSetPicker}
         selectedSetSlug={selectedSetSlug}
-        onSelect={(slug) => {
-          setSelectedSetSlug(slug);
-          // If result card is showing, also change its set
-          if (phase === "result" && currentResult) {
-            handleResultSetChange(slug);
+        onSelect={setSelectedSetSlug}
+      />
+
+      {/* ── Card-specific set picker (only sets this card exists in) ── */}
+      <CardSetPicker
+        open={showCardSetPicker}
+        onOpenChange={(v) => {
+          setShowCardSetPicker(v);
+          if (!v && currentResult && !currentCardIdRef.current) {
+            // Picker closed without picking — restart countdown
+            startConfirmCountdown(5);
           }
         }}
+        cardId={currentResult?.cardId ?? null}
+        cardName={currentResult?.name}
+        selectedSetSlug={currentResult?.variant.setSlug ?? null}
+        onSelect={handleResultSetChange}
       />
 
       {/* ── Session summary ── */}
