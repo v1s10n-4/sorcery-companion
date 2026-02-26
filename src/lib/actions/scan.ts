@@ -218,17 +218,19 @@ export async function identifyCard(frameBase64: string): Promise<ScanResult> {
 export async function resolveVariantForCard(
   cardId: string,
   setSlug: string | null,
+  preferFoil: boolean = false,
 ): Promise<ResolvedVariant | null> {
-  const where = setSlug
-    ? { cardId, set: { set: { slug: setSlug } } }
-    : { cardId };
-
-  // Try selected set first, then fallback to any
   const variantSelect = {
     id: true,
     slug: true,
     finish: true,
-    set: { select: { set: { select: { name: true, slug: true } } } },
+    set: {
+      select: {
+        set: {
+          select: { name: true, slug: true, releasedAt: true },
+        },
+      },
+    },
     tcgplayerProducts: {
       select: {
         priceSnapshots: {
@@ -241,31 +243,80 @@ export async function resolveVariantForCard(
     },
   };
 
-  let variant = await prisma.cardVariant.findFirst({
-    where,
-    orderBy: [{ finish: "asc" }, { createdAt: "desc" }],
-    select: variantSelect,
-  });
+  // Desired finish: Standard by default, Foil only if explicitly toggled
+  const targetFinish = preferFoil ? "Foil" : "Standard";
 
-  if (!variant && setSlug) {
-    variant = await prisma.cardVariant.findFirst({
-      where: { cardId },
-      orderBy: [{ finish: "asc" }, { createdAt: "desc" }],
+  // 1. If user locked a set, try that set + target finish first
+  if (setSlug) {
+    const inSet = await prisma.cardVariant.findFirst({
+      where: { cardId, finish: targetFinish, set: { set: { slug: setSlug } } },
       select: variantSelect,
     });
+    if (inSet) return toResolved(inSet);
+
+    // Fallback: any finish in locked set
+    const anyFinish = await prisma.cardVariant.findFirst({
+      where: { cardId, set: { set: { slug: setSlug } } },
+      orderBy: { finish: "asc" },
+      select: variantSelect,
+    });
+    if (anyFinish) return toResolved(anyFinish);
   }
 
-  if (!variant) return null;
+  // 2. No locked set → latest set, Standard finish
+  //    Order by set release date DESC → newest set first
+  const latest = await prisma.cardVariant.findFirst({
+    where: { cardId, finish: targetFinish },
+    orderBy: { set: { set: { releasedAt: "desc" } } },
+    select: variantSelect,
+  });
+  if (latest) return toResolved(latest);
 
-  const price = variant.tcgplayerProducts[0]?.priceSnapshots[0]?.marketPrice ?? null;
+  // 3. Absolute fallback: any variant, Standard preferred
+  const fallback = await prisma.cardVariant.findFirst({
+    where: { cardId },
+    orderBy: [{ finish: "asc" }, { set: { set: { releasedAt: "desc" } } }],
+    select: variantSelect,
+  });
+  if (!fallback) return null;
+  return toResolved(fallback);
+}
 
+/** Check if a foil variant exists for a card in a given set */
+export async function hasFoilVariant(
+  cardId: string,
+  setSlug: string,
+): Promise<boolean> {
+  const count = await prisma.cardVariant.count({
+    where: { cardId, finish: "Foil", set: { set: { slug: setSlug } } },
+  });
+  return count > 0;
+}
+
+/** Get the foil/standard counterpart of a variant */
+export async function toggleFinish(
+  cardId: string,
+  setSlug: string,
+  currentFinish: string,
+): Promise<ResolvedVariant | null> {
+  const newFinish = currentFinish === "Foil" ? "Standard" : "Foil";
+  return resolveVariantForCard(cardId, setSlug, newFinish === "Foil");
+}
+
+function toResolved(v: {
+  id: string;
+  slug: string;
+  finish: string;
+  set: { set: { name: string; slug: string; releasedAt: Date | null } };
+  tcgplayerProducts: { priceSnapshots: { marketPrice: number | null }[] }[];
+}): ResolvedVariant {
   return {
-    variantId: variant.id,
-    slug: variant.slug,
-    setName: variant.set.set.name,
-    setSlug: variant.set.set.slug,
-    finish: variant.finish,
-    price,
+    variantId: v.id,
+    slug: v.slug,
+    setName: v.set.set.name,
+    setSlug: v.set.set.slug,
+    finish: v.finish,
+    price: v.tcgplayerProducts[0]?.priceSnapshots[0]?.marketPrice ?? null,
   };
 }
 

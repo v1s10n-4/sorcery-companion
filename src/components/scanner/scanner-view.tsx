@@ -4,17 +4,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft, Camera, Layers, List, AlertTriangle,
-  ChevronDown, X, DollarSign,
+  ChevronDown, X, DollarSign, Sparkles,
 } from "lucide-react";
 import { useCamera } from "@/hooks/use-camera";
 import { useFrameStability } from "@/hooks/use-frame-stability";
 import { CardGuideOverlay, SVG_W, SVG_H, CARD_W, CARD_H, type ScanPhase } from "./card-guide-overlay";
 import { SetPicker, getStoredScanSet } from "./set-picker";
 import { ScanSessionSummary } from "./scan-session-summary";
-import { VariantPicker } from "./variant-picker";
 import { CardImage } from "@/components/card-image";
 import type {
-  ScanResult, ScanSessionItem, ResolvedVariant, CardVariantOption,
+  ScanResult, ScanSessionItem, ResolvedVariant,
 } from "@/lib/actions/scan";
 
 type Phase = ScanPhase;
@@ -111,9 +110,8 @@ export function ScannerView() {
   const [selectedSetSlug, setSelectedSetSlug] = useState<string | null>(null);
   const [showSetPicker, setShowSetPicker] = useState(false);
 
-  // Variant picker (inline on result card)
-  const [showVariantPicker, setShowVariantPicker] = useState(false);
-  const [variantOptions, setVariantOptions] = useState<CardVariantOption[]>([]);
+  // Foil toggle state
+  const [hasFoil, setHasFoil] = useState(false);
 
   useEffect(() => {
     setSelectedSetSlug(getStoredScanSet());
@@ -208,50 +206,51 @@ export function ScannerView() {
     setPhase("idle");
   }, []);
 
-  // ── Change variant on current result ──────────────────────────────────────
+  // ── Toggle foil/standard on current result ──────────────────────────────
 
-  const changeVariant = useCallback(
-    (option: CardVariantOption) => {
+  const handleFoilToggle = useCallback(async () => {
+    if (!currentResult) return;
+    // Pause countdown while toggling
+    if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
+    setConfirmCountdown(0);
+
+    const { toggleFinish } = await import("@/lib/actions/scan");
+    const newVariant = await toggleFinish(
+      currentResult.cardId,
+      currentResult.variant.setSlug,
+      currentResult.variant.finish,
+    );
+    if (newVariant) {
+      setCurrentResult((prev) => (prev ? { ...prev, variant: newVariant } : null));
+    }
+    // Restart countdown
+    startConfirmCountdown(5);
+  }, [currentResult, startConfirmCountdown]);
+
+  // ── Change set on current result (from set picker) ────────────────────────
+
+  const handleResultSetChange = useCallback(
+    async (setSlug: string | null) => {
       if (!currentResult) return;
-      // Reset countdown — user is interacting
       if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
       setConfirmCountdown(0);
 
-      setCurrentResult((prev) =>
-        prev
-          ? {
-              ...prev,
-              variant: {
-                variantId: option.variantId,
-                slug: option.slug,
-                setName: option.setName,
-                setSlug: option.setSlug,
-                finish: option.finish,
-                price: option.price,
-              },
-            }
-          : null,
+      const { resolveVariantForCard, hasFoilVariant } = await import("@/lib/actions/scan");
+      const isFoil = currentResult.variant.finish === "Foil";
+      const newVariant = await resolveVariantForCard(
+        currentResult.cardId,
+        setSlug,
+        isFoil,
       );
-      setShowVariantPicker(false);
-      // Restart countdown after variant change
+      if (newVariant) {
+        setCurrentResult((prev) => (prev ? { ...prev, variant: newVariant } : null));
+        const foilExists = await hasFoilVariant(currentResult.cardId, newVariant.setSlug);
+        setHasFoil(foilExists);
+      }
       startConfirmCountdown(5);
     },
     [currentResult, startConfirmCountdown],
   );
-
-  // ── Open variant picker ───────────────────────────────────────────────────
-
-  const openVariantPicker = useCallback(async () => {
-    if (!currentResult) return;
-    // Pause countdown while picker is open
-    if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
-    setConfirmCountdown(0);
-
-    const { getCardVariants } = await import("@/lib/actions/scan");
-    const variants = await getCardVariants(currentResult.cardId);
-    setVariantOptions(variants);
-    setShowVariantPicker(true);
-  }, [currentResult]);
 
   // ── Frame stability handler ───────────────────────────────────────────────
 
@@ -316,16 +315,19 @@ export function ScannerView() {
           return;
         }
 
-        // Resolve variant
-        const variant = await resolveVariantForCard(
-          match.cardId,
-          selectedSetSlugRef.current,
-        );
+        // Resolve variant (standard finish, latest set)
+        const { resolveVariantForCard: resolve, hasFoilVariant: checkFoil } =
+          await import("@/lib/actions/scan");
+        const variant = await resolve(match.cardId, selectedSetSlugRef.current);
         if (!variant) {
           setErrorMsg("Could not resolve card variant");
           setPhase("error");
           return;
         }
+
+        // Check if foil exists for this card in this set
+        const foilExists = await checkFoil(match.cardId, variant.setSlug);
+        setHasFoil(foilExists);
 
         // Show result card
         setCurrentResult({
@@ -566,16 +568,33 @@ export function ScannerView() {
                     {currentResult.name}
                   </p>
 
-                  {/* Variant selector (tap to change) */}
-                  <button
-                    onClick={openVariantPicker}
-                    className="flex items-center gap-1 mt-1 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                  >
-                    <span className="truncate">
-                      {currentResult.variant.setName} · {currentResult.variant.finish}
-                    </span>
-                    <ChevronDown className="h-3 w-3 shrink-0" />
-                  </button>
+                  {/* Set (tappable to change) + foil toggle */}
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <button
+                      onClick={() => setShowSetPicker(true)}
+                      className="flex items-center gap-0.5 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                    >
+                      <span className="truncate max-w-[120px]">
+                        {currentResult.variant.setName}
+                      </span>
+                      <ChevronDown className="h-3 w-3 shrink-0" />
+                    </button>
+
+                    {hasFoil && (
+                      <button
+                        onClick={handleFoilToggle}
+                        className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[10px] font-semibold transition-colors cursor-pointer ${
+                          currentResult.variant.finish === "Foil"
+                            ? "bg-purple-500/20 text-purple-300 border border-purple-500/30"
+                            : "bg-muted/40 text-muted-foreground hover:bg-muted/60"
+                        }`}
+                        aria-label="Toggle foil"
+                      >
+                        <Sparkles className="h-2.5 w-2.5" />
+                        Foil
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Price */}
@@ -644,21 +663,18 @@ export function ScannerView() {
         </div>
       )}
 
-      {/* ── Variant picker ── */}
-      <VariantPicker
-        open={showVariantPicker}
-        onOpenChange={setShowVariantPicker}
-        variants={variantOptions}
-        selectedVariantId={currentResult?.variant.variantId ?? null}
-        onSelect={changeVariant}
-      />
-
       {/* ── Set picker ── */}
       <SetPicker
         open={showSetPicker}
         onOpenChange={setShowSetPicker}
         selectedSetSlug={selectedSetSlug}
-        onSelect={setSelectedSetSlug}
+        onSelect={(slug) => {
+          setSelectedSetSlug(slug);
+          // If result card is showing, also change its set
+          if (phase === "result" && currentResult) {
+            handleResultSetChange(slug);
+          }
+        }}
       />
 
       {/* ── Session summary ── */}
