@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { usePersistedState } from "@/hooks/use-persisted-state";
 import {
   Camera, Layers, List, AlertTriangle,
-  ChevronDown, X, DollarSign, Sparkles,
+  ChevronDown, X, DollarSign, Sparkles, SwitchCamera,
 } from "lucide-react";
 import { useCamera } from "@/hooks/use-camera";
 import { useFrameStability } from "@/hooks/use-frame-stability";
@@ -129,11 +129,25 @@ export function ScannerView() {
   }, []);
 
   // Camera
-  const { ready, error: cameraError } = useCamera(videoRef, {
+  const {
+    ready,
+    error: cameraError,
+    devices,
+    activeDeviceId,
+    switchCamera,
+  } = useCamera(videoRef, {
     onError: (err) => {
       if (err.kind === "permission-denied") setPhase("permission-denied");
     },
   });
+
+  // Cycle to next camera
+  const handleCameraSwitch = useCallback(() => {
+    if (devices.length < 2) return;
+    const idx = devices.findIndex((d) => d.deviceId === activeDeviceId);
+    const next = devices[(idx + 1) % devices.length];
+    if (next) switchCamera(next.deviceId);
+  }, [devices, activeDeviceId, switchCamera]);
 
   // ── Add to session ─────────────────────────────────────────────────────────
 
@@ -554,7 +568,24 @@ export function ScannerView() {
       <canvas ref={cropCanvasRef} className="hidden" />
 
       {/* ── Header ── */}
-      <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-end px-3 py-2 bg-gradient-to-b from-black/80 to-transparent">
+      <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-3 py-2 bg-gradient-to-b from-black/80 to-transparent">
+        {/* Left side — camera switch (desktop / multi-camera) */}
+        <div className="flex items-center">
+          {devices.length > 1 && (
+            <button
+              onClick={handleCameraSwitch}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 backdrop-blur-sm text-white/80 hover:text-white hover:bg-white/20 text-xs transition-colors cursor-pointer min-h-[36px]"
+              aria-label="Switch camera"
+            >
+              <SwitchCamera className="h-4 w-4" />
+              <span className="hidden sm:inline">
+                {devices.find((d) => d.deviceId === activeDeviceId)?.label ?? "Camera"}
+              </span>
+            </button>
+          )}
+        </div>
+
+        {/* Right side — set locker + session count */}
         <div className="flex items-center gap-1">
           <button
             onClick={() => setShowSetPicker(true)}
