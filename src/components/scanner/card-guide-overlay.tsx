@@ -15,6 +15,7 @@ export type ScanPhase =
   | "matched"
   | "uncertain"
   | "result"
+  | "suggestions"
   | "no-detection"
   | "error"
   | "permission-denied";
@@ -52,6 +53,7 @@ const phaseColors: Record<string, string> = {
   scanning: "#60a5fa",             // blue-400
   matched: "#4ade80",              // green-400
   result: "#4ade80",               // green-400 — same as matched
+  suggestions: "#fbbf24",          // amber-400 — suggestions showing
   uncertain: "#fbbf24",            // amber-300 — softer than stabilizing
   "no-detection": "rgba(255,255,255,0.25)", // very muted — don't alarm
   error: "#f87171",                // red-400

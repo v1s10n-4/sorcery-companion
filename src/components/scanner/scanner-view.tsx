@@ -120,6 +120,12 @@ export function ScannerView() {
   // Card-specific set picker (result card)
   const [showCardSetPicker, setShowCardSetPicker] = useState(false);
 
+  // Suggestions (low-confidence candidates)
+  const [suggestions, setSuggestions] = useState<
+    { cardId: string; name: string; slug: string | null; confidence: number }[]
+  >([]);
+  const suggestionsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     setSelectedSetSlug(getStoredScanSet());
   }, []);
@@ -196,10 +202,11 @@ export function ScannerView() {
     [confirmResult],
   );
 
-  // Cancel countdown on unmount
+  // Cancel timers on unmount
   useEffect(() => {
     return () => {
       if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
+      if (suggestionsTimerRef.current) clearTimeout(suggestionsTimerRef.current);
     };
   }, []);
 
@@ -212,6 +219,50 @@ export function ScannerView() {
     setConfirmCountdown(0);
     setPhase("idle");
   }, []);
+
+  // ── Pick a suggestion (low confidence) ──────────────────────────────────
+
+  const handleSuggestionPick = useCallback(
+    async (cardId: string, name: string) => {
+      // Cancel the auto-dismiss timer
+      if (suggestionsTimerRef.current) clearTimeout(suggestionsTimerRef.current);
+      setSuggestions([]);
+
+      // Resolve variant and show result card (same as high-confidence flow)
+      const { resolveVariantForCard: resolve, hasFoilVariant: checkFoil } =
+        await import("@/lib/actions/scan");
+      const lockedSet = selectedSetSlugRef.current;
+      const variant = await resolve(cardId, lockedSet);
+
+      if (!variant || (lockedSet && variant.setSlug !== lockedSet)) {
+        setPhase("no-detection");
+        return;
+      }
+
+      const foilExists = await checkFoil(cardId, variant.setSlug);
+      setHasFoil(foilExists);
+
+      setCurrentResult({ cardId, name, confidence: 1, variant });
+      currentCardIdRef.current = null;
+      setPhase("result");
+
+      // Start countdown
+      if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
+      setConfirmCountdown(5);
+      let remaining = 5;
+      const tick = () => {
+        remaining--;
+        if (remaining <= 0) {
+          setConfirmCountdown(-1);
+          return;
+        }
+        setConfirmCountdown(remaining);
+        confirmTimerRef.current = setTimeout(tick, 1000);
+      };
+      confirmTimerRef.current = setTimeout(tick, 1000);
+    },
+    [],
+  );
 
   // ── Toggle foil/standard on current result ──────────────────────────────
 
@@ -308,7 +359,7 @@ export function ScannerView() {
           return;
         }
 
-        const { match } = result;
+        const { match, candidates } = result;
 
         // Same card still in viewport — don't re-process
         if (match.cardId === currentCardIdRef.current) {
@@ -316,13 +367,40 @@ export function ScannerView() {
           return;
         }
 
-        // Low confidence — treat as no detection
-        if (match.confidence < CONF_NO_DETECT) {
-          setPhase("no-detection");
+        // Below threshold — show suggestions if we have candidates
+        if (match.confidence < CONF_HIGH) {
+          // Build suggestion list: top match + other unique candidates
+          const seen = new Set<string>();
+          const suggs: typeof suggestions = [];
+          for (const c of [match, ...candidates]) {
+            if (!seen.has(c.cardId) && suggs.length < 3) {
+              seen.add(c.cardId);
+              suggs.push({
+                cardId: c.cardId,
+                name: c.name,
+                slug: c.slug,
+                confidence: c.confidence,
+              });
+            }
+          }
+          if (suggs.length > 0) {
+            setSuggestions(suggs);
+            setPhase("suggestions");
+            // Auto-dismiss + re-scan after 5s
+            if (suggestionsTimerRef.current) clearTimeout(suggestionsTimerRef.current);
+            suggestionsTimerRef.current = setTimeout(() => {
+              setSuggestions([]);
+              setPhase("idle");
+              // resetStability will be called by the stability hook
+              // when phase goes back to idle and active becomes true
+            }, 5000);
+          } else {
+            setPhase("no-detection");
+          }
           return;
         }
 
-        // Resolve variant (standard finish, latest set or locked set)
+        // High confidence — resolve and show result card
         const { resolveVariantForCard: resolve, hasFoilVariant: checkFoil } =
           await import("@/lib/actions/scan");
         const lockedSet = selectedSetSlugRef.current;
@@ -401,7 +479,7 @@ export function ScannerView() {
 
   // Stability detection active when idle, stabilizing, or result (to detect card swap)
   const stabilityActive =
-    ready && (phase === "idle" || phase === "stabilizing" || phase === "result");
+    ready && (phase === "idle" || phase === "stabilizing" || phase === "result" || phase === "suggestions");
 
   const { resetStability } = useFrameStability(videoRef, canvasRef, {
     onStable: handleStable,
@@ -414,10 +492,20 @@ export function ScannerView() {
 
   const returnToIdle = useCallback(() => {
     if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
+    if (suggestionsTimerRef.current) clearTimeout(suggestionsTimerRef.current);
     setPhase("idle");
     setStabProgress(0);
     setErrorMsg(null);
     setConfirmCountdown(0);
+    setSuggestions([]);
+    resetStability();
+  }, [resetStability]);
+
+  // Dismiss suggestions manually
+  const dismissSuggestions = useCallback(() => {
+    if (suggestionsTimerRef.current) clearTimeout(suggestionsTimerRef.current);
+    setSuggestions([]);
+    setPhase("idle");
     resetStability();
   }, [resetStability]);
 
@@ -676,6 +764,57 @@ export function ScannerView() {
         </div>
       )}
 
+      {/* ── Suggestions strip (low confidence) ── */}
+      {phase === "suggestions" && suggestions.length > 0 && (
+        <div className="absolute bottom-0 left-0 right-0 z-30 animate-in slide-in-from-bottom-4 fade-in duration-200">
+          <div className="mx-3 mb-3">
+            {/* Header with dismiss */}
+            <div className="flex items-center justify-between mb-2 px-1">
+              <span className="text-xs text-amber-300/80 font-medium">
+                Is this one of these?
+              </span>
+              <button
+                onClick={dismissSuggestions}
+                className="text-xs text-muted-foreground hover:text-white transition-colors cursor-pointer px-2 py-1"
+              >
+                Dismiss
+              </button>
+            </div>
+
+            {/* Card suggestions */}
+            <div className="flex gap-2">
+              {suggestions.map((s) => (
+                <button
+                  key={s.cardId}
+                  onClick={() => handleSuggestionPick(s.cardId, s.name)}
+                  className="flex-1 flex items-center gap-2.5 bg-card/95 backdrop-blur-xl border border-border rounded-xl shadow-2xl p-2.5 hover:bg-card transition-colors cursor-pointer min-h-[68px]"
+                >
+                  {s.slug ? (
+                    <CardImage
+                      slug={s.slug}
+                      name={s.name}
+                      width={36}
+                      height={50}
+                      className="rounded-sm shrink-0"
+                    />
+                  ) : (
+                    <div className="w-9 h-[50px] rounded-sm bg-muted/30 shrink-0" />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold truncate leading-tight">
+                      {s.name}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground tabular-nums mt-0.5">
+                      {Math.round(s.confidence * 100)}%
+                    </p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Set locker (session-wide, all sets) ── */}
       <SetPicker
         open={showSetPicker}
@@ -722,5 +861,5 @@ export function ScannerView() {
   );
 }
 
-// Confidence threshold used in stable handler
-const CONF_NO_DETECT = 0.45;
+// Confidence thresholds
+const CONF_HIGH = 0.7;
