@@ -98,8 +98,13 @@ export async function identifyCard(frameBase64: string): Promise<ScanResult> {
     };
   }
 
+  // Strip data-URL prefix if present (captureCardRegion returns a full data URL)
+  const raw = frameBase64.includes(",")
+    ? frameBase64.split(",")[1]!
+    : frameBase64;
+
   // Convert base64 → Buffer → Blob for FormData
-  const buffer = Buffer.from(frameBase64, "base64");
+  const buffer = Buffer.from(raw, "base64");
   const blob = new Blob([buffer], { type: "image/jpeg" });
 
   const headers: Record<string, string> = {};
