@@ -766,34 +766,33 @@ export function ScannerView() {
 
       {/* ── Suggestions strip (low confidence) ── */}
       {phase === "suggestions" && suggestions.length > 0 && (
-        <div className="absolute bottom-0 left-0 right-0 z-30 flex flex-col items-center animate-in slide-in-from-bottom-4 fade-in duration-200 mb-6">
-          {/* Suggestion cards */}
-          <div className="flex gap-2 px-3">
+        <div className="absolute bottom-0 left-0 right-0 z-30 animate-in slide-in-from-bottom-4 fade-in duration-200 mb-6">
+          <div className="flex items-center justify-center gap-3 px-3">
             {suggestions.map((s) => {
               const pct = Math.round(s.confidence * 100);
               const color =
                 s.confidence >= 0.6 ? "text-green-400 stroke-green-400"
                 : s.confidence >= 0.4 ? "text-amber-400 stroke-amber-400"
                 : "text-red-400 stroke-red-400";
-              const circumference = Math.PI * 28; // r=14
+              const circumference = Math.PI * 28;
               const offset = circumference * (1 - s.confidence);
 
               return (
                 <button
                   key={s.cardId}
                   onClick={() => handleSuggestionPick(s.cardId, s.name)}
-                  className="relative bg-card/95 backdrop-blur-xl border border-border rounded-xl shadow-2xl p-1.5 hover:bg-card active:scale-95 transition-all cursor-pointer"
+                  className="relative active:scale-95 transition-transform cursor-pointer"
                 >
                   {s.slug ? (
                     <CardImage
                       slug={s.slug}
                       name={s.name}
-                      width={64}
-                      height={89}
-                      className="rounded-lg"
+                      width={80}
+                      height={112}
+                      className="rounded-lg shadow-2xl"
                     />
                   ) : (
-                    <div className="w-16 h-[89px] rounded-lg bg-muted/30" />
+                    <div className="w-20 h-28 rounded-lg bg-muted/30 shadow-2xl" />
                   )}
                   {/* Confidence ring */}
                   <div className="absolute -bottom-2 -right-2 w-8 h-8 rounded-full bg-black/80 backdrop-blur-sm flex items-center justify-center">
@@ -819,16 +818,16 @@ export function ScannerView() {
                 </button>
               );
             })}
-          </div>
 
-          {/* Dismiss FAB */}
-          <button
-            onClick={dismissSuggestions}
-            className="mt-3 flex items-center justify-center w-10 h-10 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 text-white/70 hover:text-white hover:bg-white/20 transition-colors cursor-pointer shadow-lg"
-            aria-label="Dismiss suggestions"
-          >
-            <X className="h-5 w-5" />
-          </button>
+            {/* Dismiss FAB */}
+            <button
+              onClick={dismissSuggestions}
+              className="flex items-center justify-center w-10 h-10 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 text-white/70 hover:text-white hover:bg-white/20 transition-colors cursor-pointer shadow-lg shrink-0"
+              aria-label="Dismiss suggestions"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
         </div>
       )}
 
