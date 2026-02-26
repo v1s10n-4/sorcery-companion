@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { usePersistedState } from "@/hooks/use-persisted-state";
 import {
   ArrowLeft, Camera, Layers, List, AlertTriangle,
   ChevronDown, X, DollarSign, Sparkles,
@@ -103,8 +104,10 @@ export function ScannerView() {
   const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [confirmCountdown, setConfirmCountdown] = useState(0);
 
-  // Session items (pending for batch commit)
-  const [sessionItems, setSessionItems] = useState<ScanSessionItem[]>([]);
+  // Session items — persisted to localStorage so a long session survives
+  // reloads, navigation, and tab close
+  const [sessionItems, setSessionItems, clearSession] =
+    usePersistedState<ScanSessionItem[]>("sc-scan-session", []);
   const [showSummary, setShowSummary] = useState(false);
 
   // Set picker
@@ -433,15 +436,15 @@ export function ScannerView() {
   // ── Session actions ───────────────────────────────────────────────────────
 
   const handleCommit = useCallback(() => {
-    setSessionItems([]);
+    clearSession();
     setShowSummary(false);
     returnToIdle();
-  }, [returnToIdle]);
+  }, [clearSession, returnToIdle]);
 
   const handleDiscard = useCallback(() => {
-    setSessionItems([]);
+    clearSession();
     returnToIdle();
-  }, [returnToIdle]);
+  }, [clearSession, returnToIdle]);
 
   const handleExit = useCallback(() => {
     if (sessionItems.length > 0) {
