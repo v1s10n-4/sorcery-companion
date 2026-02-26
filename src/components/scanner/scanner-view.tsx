@@ -1,10 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import { usePersistedState } from "@/hooks/use-persisted-state";
 import {
-  ArrowLeft, Camera, Layers, List, AlertTriangle,
+  Camera, Layers, List, AlertTriangle,
   ChevronDown, X, DollarSign, Sparkles,
 } from "lucide-react";
 import { useCamera } from "@/hooks/use-camera";
@@ -79,7 +78,6 @@ function formatPrice(price: number | null): string {
 // ── Component ──────────────────────────────────────────────────────────────────
 
 export function ScannerView() {
-  const router = useRouter();
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const cropCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -534,14 +532,6 @@ export function ScannerView() {
     returnToIdle();
   }, [clearSession, returnToIdle]);
 
-  const handleExit = useCallback(() => {
-    if (sessionItems.length > 0) {
-      setShowSummary(true);
-    } else {
-      router.back();
-    }
-  }, [sessionItems.length, router]);
-
   // ── Manual confirm (tap the confirm button) ───────────────────────────────
 
   const handleManualConfirm = useCallback(() => {
@@ -559,20 +549,12 @@ export function ScannerView() {
   const totalScanned = sessionItems.reduce((s, i) => s + i.quantity, 0);
 
   return (
-    <div className="fixed inset-0 z-50 bg-black flex flex-col">
+    <div className="fixed inset-0 z-30 bg-black flex flex-col">
       <canvas ref={canvasRef} className="hidden" />
       <canvas ref={cropCanvasRef} className="hidden" />
 
       {/* ── Header ── */}
-      <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-3 py-2 bg-gradient-to-b from-black/80 to-transparent">
-        <button
-          onClick={handleExit}
-          className="flex items-center gap-1.5 text-white/90 hover:text-white text-sm cursor-pointer min-h-[44px] min-w-[44px] justify-center"
-          aria-label="Exit scanner"
-        >
-          <ArrowLeft className="h-5 w-5" />
-        </button>
-
+      <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-end px-3 py-2 bg-gradient-to-b from-black/80 to-transparent">
         <div className="flex items-center gap-1">
           <button
             onClick={() => setShowSetPicker(true)}
@@ -606,7 +588,7 @@ export function ScannerView() {
         <CardGuideOverlay phase={phase} progress={stabProgress} />
 
         {/* Status text */}
-        <div className="absolute bottom-4 left-0 right-0 flex justify-center z-10 pointer-events-none">
+        <div className="absolute bottom-20 left-0 right-0 flex justify-center z-10 pointer-events-none">
           {phase === "idle" && ready && !currentResult && (
             <span className="text-white/60 text-xs bg-black/40 px-3 py-1 rounded-full backdrop-blur-sm">
               Hold a card steady in the frame
@@ -642,8 +624,8 @@ export function ScannerView() {
 
       {/* ── Result card (bottom sheet style) ── */}
       {phase === "result" && currentResult && (
-        <div className="absolute bottom-0 left-0 right-0 z-30 animate-in slide-in-from-bottom-4 fade-in duration-200">
-          <div className="mx-3 mb-3 bg-card/95 backdrop-blur-xl border border-border rounded-2xl shadow-2xl overflow-hidden">
+        <div className="absolute bottom-16 left-0 right-0 z-30 animate-in slide-in-from-bottom-4 fade-in duration-200 pb-[env(safe-area-inset-bottom,0px)]">
+          <div className="mx-3 mb-2 bg-card/95 backdrop-blur-xl border border-border rounded-2xl shadow-2xl overflow-hidden">
             <div className="flex items-stretch gap-3 p-3">
               {/* Card thumbnail */}
               {currentResult.variant.slug ? (
@@ -766,7 +748,7 @@ export function ScannerView() {
 
       {/* ── Suggestions strip (low confidence) ── */}
       {phase === "suggestions" && suggestions.length > 0 && (
-        <div className="absolute bottom-0 left-0 right-0 z-30 animate-in slide-in-from-bottom-4 fade-in duration-200 mb-6">
+        <div className="absolute bottom-16 left-0 right-0 z-30 animate-in slide-in-from-bottom-4 fade-in duration-200 pb-[env(safe-area-inset-bottom,0px)]">
           <div className="flex items-center justify-center gap-3 px-3">
             {suggestions.map((s) => {
               const pct = Math.round(s.confidence * 100);

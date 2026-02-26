@@ -23,9 +23,6 @@ const TABS: Tab[] = [
 export function BottomTabBar() {
   const pathname = usePathname();
 
-  // Scanner is full-screen — hide the bar on /scan
-  if (pathname === "/scan") return null;
-
   return (
     <>
       {/* Spacer so page content isn't hidden behind the bar */}
