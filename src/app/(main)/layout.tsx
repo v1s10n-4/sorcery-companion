@@ -1,5 +1,4 @@
 import { Nav } from "@/components/nav";
-import { BottomTabBar } from "@/components/bottom-tab-bar";
 import { SelectionProvider } from "@/components/selection-provider";
 
 export default function MainLayout({
@@ -12,7 +11,6 @@ export default function MainLayout({
       <Nav />
       {children}
       <SelectionProvider />
-      <BottomTabBar />
     </>
   );
 }

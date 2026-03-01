@@ -3,6 +3,7 @@ import { Cinzel, Inter } from "next/font/google";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
 import { Analytics } from "@vercel/analytics/next";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { BottomTabBar } from "@/components/bottom-tab-bar";
 import "./globals.css";
 
 const cinzel = Cinzel({
@@ -35,6 +36,7 @@ export default function RootLayout({
         <NuqsAdapter>
           <TooltipProvider delayDuration={300}>
             {children}
+            <BottomTabBar />
           </TooltipProvider>
         </NuqsAdapter>
         <Analytics />
