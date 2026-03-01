@@ -563,7 +563,7 @@ export function ScannerView() {
   const totalScanned = sessionItems.reduce((s, i) => s + i.quantity, 0);
 
   return (
-    <div className="fixed inset-0 z-30 bg-black flex flex-col">
+    <div className="fixed top-0 inset-x-0 bottom-16 sm:bottom-0 z-30 bg-black flex flex-col">
       <canvas ref={canvasRef} className="hidden" />
       <canvas ref={cropCanvasRef} className="hidden" />
 
@@ -619,7 +619,7 @@ export function ScannerView() {
         <CardGuideOverlay phase={phase} progress={stabProgress} />
 
         {/* Status text */}
-        <div className="absolute bottom-20 left-0 right-0 flex justify-center z-10 pointer-events-none">
+        <div className="absolute bottom-4 left-0 right-0 flex justify-center z-10 pointer-events-none">
           {phase === "idle" && ready && !currentResult && (
             <span className="text-white/60 text-xs bg-black/40 px-3 py-1 rounded-full backdrop-blur-sm">
               Hold a card steady in the frame
@@ -655,7 +655,7 @@ export function ScannerView() {
 
       {/* ── Result card (bottom sheet style) ── */}
       {phase === "result" && currentResult && (
-        <div className="absolute bottom-16 left-0 right-0 z-30 animate-in slide-in-from-bottom-4 fade-in duration-200 pb-[env(safe-area-inset-bottom,0px)]">
+        <div className="absolute bottom-2 left-0 right-0 z-30 animate-in slide-in-from-bottom-4 fade-in duration-200 pb-[env(safe-area-inset-bottom,0px)]">
           <div className="mx-3 mb-2 bg-card/95 backdrop-blur-xl border border-border rounded-2xl shadow-2xl overflow-hidden">
             <div className="flex items-stretch gap-3 p-3">
               {/* Card thumbnail */}
@@ -779,7 +779,7 @@ export function ScannerView() {
 
       {/* ── Suggestions strip (low confidence) ── */}
       {phase === "suggestions" && suggestions.length > 0 && (
-        <div className="absolute bottom-16 left-0 right-0 z-30 animate-in slide-in-from-bottom-4 fade-in duration-200 pb-[env(safe-area-inset-bottom,0px)]">
+        <div className="absolute bottom-2 left-0 right-0 z-30 animate-in slide-in-from-bottom-4 fade-in duration-200 pb-[env(safe-area-inset-bottom,0px)]">
           <div className="flex items-center justify-center gap-3 px-3">
             {suggestions.map((s) => {
               const pct = Math.round(s.confidence * 100);
