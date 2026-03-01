@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { getAllCards, getAllSets } from "@/lib/data";
 import { CardBrowser, type CardOverlayEntry } from "@/components/card-browser";
 import { SharingSettings } from "@/components/collection/sharing-settings";
-import { CardBrowserSkeleton } from "@/components/skeletons";
+import { CollectionPageSkeleton } from "@/components/skeletons";
 import { CollectionStats } from "@/components/collection/collection-stats";
 import { Button } from "@/components/ui/button";
 import { Upload, Download, BarChart3 } from "lucide-react";
@@ -19,7 +19,7 @@ export const metadata: Metadata = {
 export default async function CollectionPage() {
   return (
     <main className="container mx-auto px-3 sm:px-4 py-4 sm:py-6 max-w-[1400px]">
-      <Suspense fallback={<CardBrowserSkeleton />}>
+      <Suspense fallback={<CollectionPageSkeleton />}>
         <CollectionContent />
       </Suspense>
     </main>
