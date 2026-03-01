@@ -14,7 +14,7 @@ import { CardSetPicker } from "./card-set-picker";
 import { ScanSessionSummary } from "./scan-session-summary";
 import { CardImage } from "@/components/card-image";
 import type {
-  ScanResult, ScanSessionItem, ResolvedVariant,
+  ScanSessionItem, ResolvedVariant,
 } from "@/lib/actions/scan";
 
 type Phase = ScanPhase;
@@ -131,7 +131,6 @@ export function ScannerView() {
   // Camera
   const {
     ready,
-    error: cameraError,
     devices,
     activeDeviceId,
     switchCamera,
@@ -353,7 +352,7 @@ export function ScannerView() {
       }
 
       try {
-        const { identifyCard, resolveVariantForCard } = await import(
+        const { identifyCard } = await import(
           "@/lib/actions/scan"
         );
         const result = await identifyCard(frame);

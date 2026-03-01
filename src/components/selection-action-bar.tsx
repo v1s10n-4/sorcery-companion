@@ -148,9 +148,6 @@ export function SelectionActionBar() {
     });
   };
 
-  // Resolve target deck — either from URL (deck page) or picker (collection page)
-  const targetDeckId = currentDeckId ?? selectedDeckId;
-  const hasDeckTarget = !!targetDeckId;
 
   return (
     <>

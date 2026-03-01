@@ -7,7 +7,7 @@
     "build": "prisma generate && next build",
     "postinstall": "prisma generate",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint src/"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.995.0",

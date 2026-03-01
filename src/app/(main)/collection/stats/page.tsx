@@ -41,8 +41,6 @@ export default async function CollectionStatsPage() {
     by: ["setId"],
     _count: true,
   });
-  const sets = await prisma.set.findMany();
-  const setMap = new Map(sets.map((s) => [s.id, s]));
 
   // Aggregate collection data
   const ownedCardIds = new Set(collection.cards.map((c) => c.cardId));

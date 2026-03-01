@@ -3,7 +3,6 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { CardImage } from "@/components/card-image";
 import { CardBrowser } from "@/components/card-browser";
 import { ElementBadges } from "@/components/icons";
@@ -55,7 +54,6 @@ const SECTION_META: Record<Section, { label: string; sublabel: string; icon: Rea
 };
 
 export function DeckEditorView({
-  deckId,
   deckName,
   deckCards,
   allCards,

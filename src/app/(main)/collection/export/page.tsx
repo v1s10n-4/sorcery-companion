@@ -7,7 +7,7 @@ export const metadata: Metadata = {
 };
 
 export default async function ExportPage() {
-  const user = await requireUser();
+  await requireUser();
 
   return (
     <main className="container mx-auto px-4 py-6 max-w-lg">

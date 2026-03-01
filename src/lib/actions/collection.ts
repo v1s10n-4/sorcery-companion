@@ -112,7 +112,7 @@ export async function removeFromCollection(collectionCardId: string) {
 
 /** Add a card to collection by card ID (resolves default Standard variant) */
 export async function addToCollectionByCard(cardId: string) {
-  const user = await requireUser();
+  await requireUser();
 
   // Find the default Standard variant for this card
   const variant = await prisma.cardVariant.findFirst({

@@ -12,7 +12,7 @@ interface PriceChartProps {
  * No dependencies — just an SVG path.
  */
 export function PriceChart({ history, className }: PriceChartProps) {
-  const { path, minPrice, maxPrice, lastPrice, change } = useMemo(() => {
+  const { path, minPrice, maxPrice, change } = useMemo(() => {
     if (history.length < 2)
       return { path: "", minPrice: 0, maxPrice: 0, lastPrice: 0, change: 0 };
 

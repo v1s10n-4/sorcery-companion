@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Cinzel, Inter } from "next/font/google";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
 import { Analytics } from "@vercel/analytics/next";
@@ -17,10 +17,49 @@ const inter = Inter({
   subsets: ["latin"],
 });
 
+const BASE_URL = "https://sorcery-companion.vercel.app";
+
 export const metadata: Metadata = {
-  title: "Sorcery Companion",
+  metadataBase: new URL(BASE_URL),
+  title: {
+    default: "Sorcery Companion",
+    template: "%s — Sorcery Companion",
+  },
   description:
     "Browse, search, and manage your Sorcery: Contested Realm card collection",
+  keywords: [
+    "Sorcery Contested Realm",
+    "TCG",
+    "card game",
+    "collection tracker",
+    "card browser",
+  ],
+  authors: [{ name: "Sorcery Companion" }],
+  openGraph: {
+    type: "website",
+    locale: "en_US",
+    url: BASE_URL,
+    siteName: "Sorcery Companion",
+    title: "Sorcery Companion",
+    description:
+      "Browse, search, and manage your Sorcery: Contested Realm card collection",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Sorcery Companion",
+    description:
+      "Browse, search, and manage your Sorcery: Contested Realm card collection",
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: "#0a0a0a",
 };
 
 export default function RootLayout({

@@ -72,7 +72,6 @@ export interface ScanSet {
 }
 
 // ── Confidence thresholds ────────────────────────────────────────────────────
-const CONF_HIGH = 0.7;
 const CONF_NO_DETECT = 0.45;
 
 // ── Raw API types ────────────────────────────────────────────────────────────

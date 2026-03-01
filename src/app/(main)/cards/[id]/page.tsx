@@ -9,6 +9,8 @@ import { getCard } from "@/lib/data";
 import type { CardDetail, Printing, VariantPrice } from "@/lib/types";
 import { getUser } from "@/lib/auth";
 
+const CARD_IMAGE_BASE =
+  "https://pub-fbad7d695b084411b42bdff03adbffd5.r2.dev/cards";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -23,6 +25,13 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   return {
     title: `${card.name} — Sorcery Companion`,
     description: `${card.name} is a${card.rarity ? ` ${card.rarity}` : ""} ${card.type} in Sorcery: Contested Realm.`,
+    openGraph: {
+      title: card.name,
+      description: `${card.rarity ?? ""} ${card.type} from Sorcery: Contested Realm`,
+      images: card.variants[0]?.slug
+        ? [`${CARD_IMAGE_BASE}/${card.variants[0].slug}.png`]
+        : [],
+    },
   };
 }
 
@@ -31,27 +40,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 export default async function CardDetailPage({ params }: PageProps) {
   const { id } = await params;
 
-  // Get card for bg image
-  const bgCard = await getCard(id);
-  const bgSlug = bgCard?.variants[0]?.slug;
-  const bgImageUrl = bgSlug
-    ? `https://pub-fbad7d695b084411b42bdff03adbffd5.r2.dev/cards/${bgSlug}.png`
-    : null;
-
   return (
     <main className="relative container mx-auto px-4 py-6 max-w-4xl">
-      {/* Blurred card art background */}
-      {bgImageUrl && (
-        <div
-          className="fixed inset-0 -z-10 opacity-[0.07] blur-3xl scale-125 pointer-events-none"
-          style={{
-            backgroundImage: `url(${bgImageUrl})`,
-            backgroundSize: "cover",
-            backgroundPosition: "center",
-          }}
-        />
-      )}
-
       <Link
         href="/"
         className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6"
@@ -67,11 +57,14 @@ export default async function CardDetailPage({ params }: PageProps) {
   );
 }
 
-// ── Async data component ──
+// ── Async data component — single fetch for card + user ──
 
 async function CardDetailContent({ id }: { id: string }) {
   const [raw, user] = await Promise.all([getCard(id), getUser()]);
   if (!raw) notFound();
+
+  const bgSlug = raw.variants[0]?.slug;
+  const bgImageUrl = bgSlug ? `${CARD_IMAGE_BASE}/${bgSlug}.png` : null;
 
   // Serialize into a clean, client-safe shape
   const printings: Printing[] = raw.sets.map((cs) => ({
@@ -90,41 +83,42 @@ async function CardDetailContent({ id }: { id: string }) {
     thresholdEarth: cs.thresholdEarth,
     thresholdFire: cs.thresholdFire,
     thresholdWater: cs.thresholdWater,
-    variants: [...cs.variants].sort((a, b) => {
-      // Standard first, then alphabetical
-      if (a.finish === "Standard" && b.finish !== "Standard") return -1;
-      if (b.finish === "Standard" && a.finish !== "Standard") return 1;
-      return a.finish.localeCompare(b.finish);
-    }).map((v) => ({
-      id: v.id,
-      slug: v.slug,
-      finish: v.finish,
-      product: v.product,
-      artist: v.artist,
-      flavorText: v.flavorText,
-      typeText: v.typeText,
-      blurDataUrl: v.blurDataUrl,
-      prices: (v.tcgplayerProducts ?? []).map((tp): VariantPrice => {
-        const latest = tp.priceSnapshots[0];
-        // Deduplicate snapshots by date, keep latest per day
-        const byDate = new Map<string, number>();
-        for (const snap of [...tp.priceSnapshots].reverse()) {
-          if (snap.marketPrice != null) {
-            const date = String(snap.recordedAt).slice(0, 10);
-            byDate.set(date, snap.marketPrice);
+    variants: [...cs.variants]
+      .sort((a, b) => {
+        if (a.finish === "Standard" && b.finish !== "Standard") return -1;
+        if (b.finish === "Standard" && a.finish !== "Standard") return 1;
+        return a.finish.localeCompare(b.finish);
+      })
+      .map((v) => ({
+        id: v.id,
+        slug: v.slug,
+        finish: v.finish,
+        product: v.product,
+        artist: v.artist,
+        flavorText: v.flavorText,
+        typeText: v.typeText,
+        blurDataUrl: v.blurDataUrl,
+        prices: (v.tcgplayerProducts ?? []).map((tp): VariantPrice => {
+          const latest = tp.priceSnapshots[0];
+          // Deduplicate snapshots by date, keep latest per day
+          const byDate = new Map<string, number>();
+          for (const snap of [...tp.priceSnapshots].reverse()) {
+            if (snap.marketPrice != null) {
+              const date = String(snap.recordedAt).slice(0, 10);
+              byDate.set(date, snap.marketPrice);
+            }
           }
-        }
-        return {
-          tcgplayerProductId: tp.id,
-          productUrl: tp.productUrl,
-          printing: tp.printing,
-          marketPrice: latest?.marketPrice ?? null,
-          lowPrice: latest?.lowPrice ?? null,
-          medianPrice: latest?.medianPrice ?? null,
-          history: Array.from(byDate, ([date, price]) => ({ date, price })),
-        };
-      }),
-    })),
+          return {
+            tcgplayerProductId: tp.id,
+            productUrl: tp.productUrl,
+            printing: tp.printing,
+            marketPrice: latest?.marketPrice ?? null,
+            lowPrice: latest?.lowPrice ?? null,
+            medianPrice: latest?.medianPrice ?? null,
+            history: Array.from(byDate, ([date, price]) => ({ date, price })),
+          };
+        }),
+      })),
   }));
 
   const card: CardDetail = {
@@ -147,5 +141,20 @@ async function CardDetailContent({ id }: { id: string }) {
     printings,
   };
 
-  return <CardDetailView card={card} isLoggedIn={!!user} />;
+  return (
+    <>
+      {/* Blurred card art background — rendered after data loads */}
+      {bgImageUrl && (
+        <div
+          className="fixed inset-0 -z-10 opacity-[0.07] blur-3xl scale-125 pointer-events-none"
+          style={{
+            backgroundImage: `url(${bgImageUrl})`,
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+          }}
+        />
+      )}
+      <CardDetailView card={card} isLoggedIn={!!user} />
+    </>
+  );
 }

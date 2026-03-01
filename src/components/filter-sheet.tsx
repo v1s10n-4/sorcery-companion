@@ -614,7 +614,7 @@ function RangeSliderFilter({
 
 function ThresholdRow({
   element,
-  field,
+  field: _field,
   state,
   onChange,
 }: {
@@ -671,7 +671,7 @@ function ThresholdRow({
 
 function SearchableChipList({
   label,
-  field,
+  field: _field,
   items,
   state,
   counts,
