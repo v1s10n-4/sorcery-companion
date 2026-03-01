@@ -1,13 +1,9 @@
-import { Skeleton } from "@/components/ui/skeleton";
+import { CardBrowserSkeleton } from "@/components/skeletons";
 
-export default function Loading() {
+export default function DeckEditorLoading() {
   return (
-    <main className="container mx-auto px-4 py-6 max-w-4xl">
-      <Skeleton className="h-8 w-48 mb-6" />
-      <div className="space-y-4">
-        <Skeleton className="h-32 rounded-lg" />
-        <Skeleton className="h-32 rounded-lg" />
-      </div>
+    <main className="container mx-auto px-3 sm:px-4 py-4 sm:py-6 max-w-[1400px]">
+      <CardBrowserSkeleton />
     </main>
   );
 }
