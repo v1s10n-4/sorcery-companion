@@ -779,7 +779,7 @@ export function ScannerView() {
 
       {/* ── Suggestions strip (low confidence) ── */}
       {phase === "suggestions" && suggestions.length > 0 && (
-        <div className="absolute bottom-2 left-0 right-0 z-30 animate-in slide-in-from-bottom-4 fade-in duration-200 pb-[env(safe-area-inset-bottom,0px)]">
+        <div className="absolute bottom-15 left-0 right-0 z-30 animate-in slide-in-from-bottom-4 fade-in duration-200 pb-[env(safe-area-inset-bottom,0px)]">
           <div className="flex items-center justify-center gap-3 px-3">
             {suggestions.map((s) => {
               const pct = Math.round(s.confidence * 100);
