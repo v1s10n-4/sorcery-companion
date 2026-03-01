@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { headers } from "next/headers";
 import { getUser } from "@/lib/auth";
 import { UserMenu } from "@/components/user-menu";
 import { MobileNav } from "@/components/mobile-nav";
@@ -7,13 +6,8 @@ import { MobileNav } from "@/components/mobile-nav";
 export async function Nav() {
   const user = await getUser();
 
-  // Read current path from headers (set by middleware / Next.js)
-  const headersList = await headers();
-  const pathname = headersList.get("x-pathname") ?? "";
-  const isScanPage = pathname === "/scan";
-
   return (
-    <nav className={`border-b border-border/50 bg-card/50 backdrop-blur-sm sticky top-0 z-50${isScanPage ? " hidden" : ""}`}>
+    <nav className="border-b border-border/50 bg-card/50 backdrop-blur-sm sticky top-0 z-50">
       <div className="container mx-auto px-4 max-w-7xl">
         <div className="flex items-center justify-between h-12">
           <Link
