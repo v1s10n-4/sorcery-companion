@@ -13,7 +13,7 @@ export async function Nav() {
   const isScanPage = pathname === "/scan";
 
   return (
-    <nav className={`border-b border-border/50 bg-card/50 backdrop-blur-sm sticky top-0 z-50${isScanPage ? " hidden sm:block" : ""}`}>
+    <nav className={`border-b border-border/50 bg-card/50 backdrop-blur-sm sticky top-0 z-50${isScanPage ? " hidden" : ""}`}>
       <div className="container mx-auto px-4 max-w-7xl">
         <div className="flex items-center justify-between h-12">
           <Link
