@@ -1,8 +1,28 @@
 import { Suspense } from "react";
+import type { Metadata } from "next";
 import { getAllCards, getAllSets } from "@/lib/data";
 import { CardBrowser } from "@/components/card-browser";
 import { CardBrowserSkeleton } from "@/components/skeletons";
 import type { SetInfo } from "@/lib/types";
+
+export const metadata: Metadata = {
+  // Use absolute title so the homepage gets the brand name, not the template
+  title: { absolute: "Sorcery Companion" },
+  description:
+    "Browse, search, and filter every Sorcery: Contested Realm card. Track your collection, build decks, and stay on top of market prices.",
+  alternates: { canonical: "/" },
+  openGraph: {
+    title: "Sorcery Companion",
+    description:
+      "Your all-in-one companion for Sorcery: Contested Realm — card browser, collection tracker, deck builder, and card scanner.",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Sorcery Companion",
+    description:
+      "Your all-in-one companion for Sorcery: Contested Realm — card browser, collection tracker, deck builder, and card scanner.",
+  },
+};
 
 export default function Home() {
   return (

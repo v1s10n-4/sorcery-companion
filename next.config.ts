@@ -4,6 +4,14 @@ const nextConfig: NextConfig = {
   reactCompiler: true,
   experimental: {
     useCache: true,
+    // Optimise barrel-file imports for heavy icon/component libs.
+    // Next.js rewrites them to direct deep imports at build time,
+    // reducing bundle size and cold-start time.
+    optimizePackageImports: [
+      "lucide-react",
+      "@radix-ui/react-icons",
+      "date-fns",
+    ],
   },
   images: {
     remotePatterns: [

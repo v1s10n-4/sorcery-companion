@@ -29,6 +29,12 @@ interface UseFrameStabilityOptions {
 /**
  * Compares consecutive video frames. When the scene is still for `holdMs`,
  * fires `onStable` with a function to capture the current frame as a JPEG base64 string.
+ *
+ * Performance notes:
+ * - Canvas dimensions are set once per effect run, not every RAF tick.
+ * - The 2D context is cached — getContext() is not called per frame.
+ * - Two Uint8ClampedArray pixel buffers are pre-allocated and swapped each
+ *   frame, eliminating per-frame heap allocation and GC pressure.
  */
 export function useFrameStability(
   videoRef: React.RefObject<HTMLVideoElement | null>,
@@ -47,7 +53,6 @@ export function useFrameStability(
 
   const rafRef = useRef<number | null>(null);
   const stableStartRef = useRef<number | null>(null);
-  const prevDataRef = useRef<Uint8ClampedArray | null>(null);
   const firedRef = useRef(false); // prevent re-firing until reset
   const activeRef = useRef(active);
   const callbacksRef = useRef({ onStable, onMotion });
@@ -76,35 +81,50 @@ export function useFrameStability(
   }, []);
 
   useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    // ── One-time setup: resize canvas and cache the 2D context ──────────────
+    // Setting canvas.width/height clears the canvas and can trigger a layout
+    // recalc. Do it once here, not inside the RAF loop.
+    canvas.width = sampleWidth;
+    canvas.height = sampleHeight;
+
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return;
+
+    // ── Pre-allocate two pixel buffers to avoid per-frame heap allocation ───
+    // We swap them each frame instead of creating a new Uint8ClampedArray.
+    const bufLen = sampleWidth * sampleHeight * 4; // RGBA
+    const pixelCount = sampleWidth * sampleHeight;
+    let prevBuf = new Uint8ClampedArray(bufLen);
+    let currBuf = new Uint8ClampedArray(bufLen);
+    let hasPrev = false;
+
+    // ── RAF loop ─────────────────────────────────────────────────────────────
     const loop = () => {
       const video = videoRef.current;
-      const canvas = canvasRef.current;
-      if (!video || !canvas || video.readyState < 2 || !activeRef.current) {
+
+      if (!video || video.readyState < 2 || !activeRef.current) {
         rafRef.current = requestAnimationFrame(loop);
         return;
       }
 
-      const ctx = canvas.getContext("2d", { willReadFrequently: true });
-      if (!ctx) {
-        rafRef.current = requestAnimationFrame(loop);
-        return;
-      }
-
-      canvas.width = sampleWidth;
-      canvas.height = sampleHeight;
+      // Draw the downsampled frame — canvas is already the right size
       ctx.drawImage(video, 0, 0, sampleWidth, sampleHeight);
-      const { data } = ctx.getImageData(0, 0, sampleWidth, sampleHeight);
 
-      if (prevDataRef.current) {
-        const prev = prevDataRef.current;
+      // Copy pixel data into currBuf (no allocation — reuses the buffer)
+      const imageData = ctx.getImageData(0, 0, sampleWidth, sampleHeight);
+      currBuf.set(imageData.data);
+
+      if (hasPrev) {
         let totalDiff = 0;
-        const pixelCount = sampleWidth * sampleHeight;
-        // Compare only every 4th pixel (RGBA stride = 4) for speed
-        for (let i = 0; i < prev.length; i += 4) {
+        // Compare only RGB channels (skip alpha), step 4 bytes per pixel
+        for (let i = 0; i < bufLen; i += 4) {
           totalDiff +=
-            Math.abs(data[i] - prev[i]) +
-            Math.abs(data[i + 1] - prev[i + 1]) +
-            Math.abs(data[i + 2] - prev[i + 2]);
+            Math.abs(currBuf[i]     - prevBuf[i]) +
+            Math.abs(currBuf[i + 1] - prevBuf[i + 1]) +
+            Math.abs(currBuf[i + 2] - prevBuf[i + 2]);
         }
         const meanDiff = totalDiff / (pixelCount * 3);
 
@@ -129,7 +149,12 @@ export function useFrameStability(
         }
       }
 
-      prevDataRef.current = new Uint8ClampedArray(data);
+      // Swap buffers: prevBuf ↔ currBuf (zero allocation)
+      const tmp = prevBuf;
+      prevBuf = currBuf;
+      currBuf = tmp;
+      hasPrev = true;
+
       rafRef.current = requestAnimationFrame(loop);
     };
 
@@ -144,7 +169,6 @@ export function useFrameStability(
     if (!active) {
       stableStartRef.current = null;
       firedRef.current = false;
-      prevDataRef.current = null;
     }
   }, [active]);
 

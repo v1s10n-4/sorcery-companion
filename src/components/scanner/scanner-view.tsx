@@ -128,6 +128,12 @@ export function ScannerView() {
     setSelectedSetSlug(getStoredScanSet());
   }, []);
 
+  // Preload the scan-actions module on mount so the first stable-frame
+  // trigger doesn't incur a lazy-import delay.
+  useEffect(() => {
+    void import("@/lib/actions/scan");
+  }, []);
+
   // Camera
   const {
     ready,
