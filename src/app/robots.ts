@@ -16,6 +16,6 @@ export default function robots(): MetadataRoute.Robots {
         ],
       },
     ],
-    sitemap: "https://sorcery-companion.vercel.app/sitemap.xml",
+    sitemap: "https://sorcery-companion.com/sitemap.xml",
   };
 }

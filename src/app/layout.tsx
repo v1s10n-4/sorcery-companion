@@ -17,7 +17,7 @@ const inter = Inter({
   subsets: ["latin"],
 });
 
-const BASE_URL = "https://sorcery-companion.vercel.app";
+const BASE_URL = "https://sorcery-companion.com";
 
 export const metadata: Metadata = {
   metadataBase: new URL(BASE_URL),

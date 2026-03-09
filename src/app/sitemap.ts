@@ -1,7 +1,7 @@
 import type { MetadataRoute } from "next";
 import { getAllCards, getAllSetSlugs } from "@/lib/data";
 
-const BASE_URL = "https://sorcery-companion.vercel.app";
+const BASE_URL = "https://sorcery-companion.com";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const [cards, sets] = await Promise.all([getAllCards(), getAllSetSlugs()]);

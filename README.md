@@ -2,7 +2,7 @@
 
 Companion app for [Sorcery: Contested Realm](https://sorcery.game/) — browse every card, track your collection, build decks, check market prices, and scan physical cards with your phone camera.
 
-**Live →** https://sorcery-companion.vercel.app
+**Live →** https://sorcery-companion.com
 
 ## Stack
 
