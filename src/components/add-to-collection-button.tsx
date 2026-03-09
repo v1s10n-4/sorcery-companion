@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -13,10 +13,10 @@ import {
 import { Plus, Check, ChevronDown, ChevronUp } from "lucide-react";
 import { addToCollection } from "@/lib/actions/collection";
 import { AuthGateModal } from "@/components/auth/auth-gate-modal";
+import { createClient } from "@/lib/supabase/client";
 
 interface AddToCollectionButtonProps {
   variantId: string;
-  isLoggedIn: boolean;
   marketPrice?: number | null;
 }
 
@@ -24,9 +24,18 @@ const CONDITIONS = ["NM", "LP", "MP", "HP", "DMG"];
 
 export function AddToCollectionButton({
   variantId,
-  isLoggedIn,
   marketPrice,
 }: AddToCollectionButtonProps) {
+  // Auth state is resolved client-side so card pages can be fully static.
+  // null = "not yet checked", false = "not logged in", true = "logged in"
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    createClient()
+      .auth.getSession()
+      .then(({ data }) => setIsLoggedIn(!!data.session));
+  }, []);
+
   const [expanded, setExpanded] = useState(false);
   const [quantity, setQuantity] = useState(1);
   const [condition, setCondition] = useState("NM");
@@ -65,7 +74,7 @@ export function AddToCollectionButton({
             size="sm"
             className="flex-1 gap-1.5"
             onClick={handleAdd}
-            disabled={loading}
+            disabled={loading || isLoggedIn === null}
           >
             {success ? (
               <>

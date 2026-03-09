@@ -5,15 +5,25 @@ import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
 import { CardDetailSkeleton } from "@/components/skeletons";
 import { CardDetailView } from "@/components/card-detail-view";
-import { getCard } from "@/lib/data";
+import { getCard, getAllCardIds } from "@/lib/data";
 import type { CardDetail, Printing, VariantPrice } from "@/lib/types";
-import { getUser } from "@/lib/auth";
 
 const CARD_IMAGE_BASE =
   "https://pub-fbad7d695b084411b42bdff03adbffd5.r2.dev/cards";
 
 interface PageProps {
   params: Promise<{ id: string }>;
+}
+
+// Unknown IDs → 404; never fall through to a dynamic render.
+export const dynamicParams = false;
+
+// ── Static params (pre-render every card at build time) ──
+
+export async function generateStaticParams() {
+  return getAllCardIds();
+  // Returns [{ id: "abc" }, { id: "def" }, ...] — Next.js pre-renders all.
+  // Revalidate via: revalidateTag("cards") or revalidateTag("card-{id}")
 }
 
 // ── Metadata ──
@@ -57,10 +67,12 @@ export default async function CardDetailPage({ params }: PageProps) {
   );
 }
 
-// ── Async data component — single fetch for card + user ──
+// ── Async data component ──
+// Auth state is intentionally NOT fetched here — this component is part of
+// the static pre-rendered shell. AddToCollectionButton checks auth client-side.
 
 async function CardDetailContent({ id }: { id: string }) {
-  const [raw, user] = await Promise.all([getCard(id), getUser()]);
+  const raw = await getCard(id);
   if (!raw) notFound();
 
   const bgSlug = raw.variants[0]?.slug;
@@ -154,7 +166,7 @@ async function CardDetailContent({ id }: { id: string }) {
           }}
         />
       )}
-      <CardDetailView card={card} isLoggedIn={!!user} />
+      <CardDetailView card={card} />
     </>
   );
 }

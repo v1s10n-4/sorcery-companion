@@ -1,8 +1,23 @@
 /**
  * Cached data-fetching functions using Next.js "use cache" directive.
  *
- * cacheLife("hours") → cached for 1 hour
- * cacheTag() → enables on-demand revalidation via revalidateTag()
+ * Strategy: tag-only invalidation — no time-based expiry.
+ *   cacheLife("max")  → permanent cache (stale/revalidate/expire = Infinity)
+ *   cacheTag(...)     → on-demand invalidation via revalidateTag()
+ *
+ * Tags in use:
+ *   "cards"           → all card data (getAllCards, getCard, getAllCardIds, getSetCards)
+ *   "card-{id}"       → individual card (getCard)
+ *   "sets"            → all set data (getAllSets, getFullSets, getSetBySlug, getAllSetSlugs)
+ *   "set-{slug}"      → individual set page data (getSetBySlug)
+ *   "set-cards-{id}"  → cards within a set (getSetCards)
+ *
+ * To invalidate on data change:
+ *   import { revalidateTag } from "next/cache";
+ *   revalidateTag("cards");          // bust every card cache entry
+ *   revalidateTag("card-abc123");    // bust one card detail page
+ *   revalidateTag("sets");           // bust all set listing caches
+ *   revalidateTag("set-beta");       // bust one set page
  */
 
 import { cacheLife, cacheTag } from "next/cache";
@@ -13,7 +28,7 @@ import type { BrowserCard, SetInfo } from "./types";
 
 export async function getAllCards(): Promise<BrowserCard[]> {
   "use cache";
-  cacheLife("hours");
+  cacheLife("max");
   cacheTag("cards");
 
   const raw = await prisma.card.findMany({
@@ -87,7 +102,7 @@ export async function getAllCards(): Promise<BrowserCard[]> {
 
 export async function getAllSets(): Promise<SetInfo[]> {
   "use cache";
-  cacheLife("hours");
+  cacheLife("max");
   cacheTag("sets");
 
   return prisma.set.findMany({
@@ -98,9 +113,22 @@ export async function getAllSets(): Promise<SetInfo[]> {
 
 // ── Card detail ──
 
+/**
+ * Returns all card IDs — used by generateStaticParams for /cards/[id].
+ * Tagged with "cards" so a revalidateTag("cards") call will also trigger
+ * a rebuild of this list on the next build/ISR cycle.
+ */
+export async function getAllCardIds(): Promise<{ id: string }[]> {
+  "use cache";
+  cacheLife("max");
+  cacheTag("cards");
+
+  return prisma.card.findMany({ select: { id: true } });
+}
+
 export async function getCard(id: string) {
   "use cache";
-  cacheLife("hours");
+  cacheLife("max");
   cacheTag("cards", `card-${id}`);
 
   return prisma.card.findUnique({
@@ -135,7 +163,7 @@ export async function getCard(id: string) {
 
 export async function getFullSets() {
   "use cache";
-  cacheLife("hours");
+  cacheLife("max");
   cacheTag("sets");
 
   return prisma.set.findMany({
@@ -145,7 +173,7 @@ export async function getFullSets() {
 
 export async function getSetBySlug(slug: string) {
   "use cache";
-  cacheLife("hours");
+  cacheLife("max");
   cacheTag("sets", `set-${slug}`);
 
   return prisma.set.findUnique({ where: { slug } });
@@ -153,7 +181,7 @@ export async function getSetBySlug(slug: string) {
 
 export async function getSetCards(setId: string, page: number, pageSize: number) {
   "use cache";
-  cacheLife("hours");
+  cacheLife("max");
   cacheTag("cards", `set-cards-${setId}`);
 
   const where = { sets: { some: { setId } } };
@@ -179,7 +207,7 @@ export async function getSetCards(setId: string, page: number, pageSize: number)
 
 export async function getAllSetSlugs() {
   "use cache";
-  cacheLife("hours");
+  cacheLife("max");
   cacheTag("sets");
 
   return prisma.set.findMany({ select: { slug: true } });

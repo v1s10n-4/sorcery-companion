@@ -45,7 +45,7 @@ interface VariantWithPrinting extends DetailVariant {
   printing: Printing;
 }
 
-export function CardDetailView({ card, isLoggedIn = false }: { card: CardDetail; isLoggedIn?: boolean }) {
+export function CardDetailView({ card }: { card: CardDetail }) {
   const allVariants = useMemo(
     () =>
       card.printings.flatMap((p) =>
@@ -146,10 +146,9 @@ export function CardDetailView({ card, isLoggedIn = false }: { card: CardDetail;
           <PriceDisplay prices={selected.prices} />
         )}
 
-        {/* Add to collection */}
+        {/* Add to collection — auth is checked client-side inside the component */}
         <AddToCollectionButton
           variantId={selected.id}
-          isLoggedIn={isLoggedIn}
           marketPrice={selected.prices[0]?.marketPrice}
         />
       </div>
