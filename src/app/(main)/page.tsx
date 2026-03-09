@@ -1,12 +1,10 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
-import { getAllCards, getAllSets } from "@/lib/data";
-import { CardBrowser } from "@/components/card-browser";
+import { preloadCatalog } from "@/lib/data";
+import { CardCatalogBrowser } from "@/components/card-catalog-browser";
 import { CardBrowserSkeleton } from "@/components/skeletons";
-import type { SetInfo } from "@/lib/types";
 
 export const metadata: Metadata = {
-  // Use absolute title so the homepage gets the brand name, not the template
   title: { absolute: "Sorcery Companion" },
   description:
     "Browse, search, and filter every Sorcery: Contested Realm card. Track your collection, build decks, and stay on top of market prices.",
@@ -25,6 +23,8 @@ export const metadata: Metadata = {
 };
 
 export default function Home() {
+  preloadCatalog();
+
   return (
     <main className="container mx-auto px-3 sm:px-4 py-4 sm:py-6 max-w-[1400px]">
       <div className="mb-4">
@@ -33,14 +33,8 @@ export default function Home() {
         </h1>
       </div>
       <Suspense fallback={<CardBrowserSkeleton />}>
-        <CardBrowserLoader />
+        <CardCatalogBrowser />
       </Suspense>
     </main>
   );
-}
-
-async function CardBrowserLoader() {
-  const [cards, sets] = await Promise.all([getAllCards(), getAllSets()]);
-
-  return <CardBrowser cards={cards} sets={sets as SetInfo[]} />;
 }

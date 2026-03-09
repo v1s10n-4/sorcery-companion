@@ -210,6 +210,21 @@ export async function getAllSetSlugs() {
   return prisma.set.findMany({ select: { slug: true } });
 }
 
+// ── Preload ──
+
+/**
+ * Fire-and-forget: kick off catalog fetches early so child components
+ * that call getAllCards() / getAllSets() resolve from the already-started
+ * cache lookup instead of waiting sequentially.
+ *
+ * Call at the top of any page that renders CardCatalogBrowser or
+ * DeckEditorWithCatalog.
+ */
+export function preloadCatalog() {
+  void getAllCards();
+  void getAllSets();
+}
+
 // ── Global counts (used by collection stats) ──
 
 export async function getTotalCardCount() {

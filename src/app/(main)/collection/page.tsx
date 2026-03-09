@@ -2,21 +2,23 @@ import { Suspense } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
+import { preloadCatalog } from "@/lib/data";
 import { prisma } from "@/lib/prisma";
-import { getAllCards, getAllSets } from "@/lib/data";
-import { CardBrowser, type CardOverlayEntry } from "@/components/card-browser";
+import { CardCatalogBrowser } from "@/components/card-catalog-browser";
+import type { CardOverlayEntry } from "@/components/card-browser";
 import { SharingSettings } from "@/components/collection/sharing-settings";
-import { CollectionPageSkeleton } from "@/components/skeletons";
 import { CollectionStats } from "@/components/collection/collection-stats";
+import { CollectionPageSkeleton } from "@/components/skeletons";
 import { Button } from "@/components/ui/button";
 import { Upload, Download, BarChart3 } from "lucide-react";
-import type { SetInfo } from "@/lib/types";
 
 export const metadata: Metadata = {
   title: "My Collection — Sorcery Companion",
 };
 
-export default async function CollectionPage() {
+export default function CollectionPage() {
+  preloadCatalog();
+
   return (
     <main className="container mx-auto px-3 sm:px-4 py-4 sm:py-6 max-w-[1400px]">
       <Suspense fallback={<CollectionPageSkeleton />}>
@@ -27,11 +29,7 @@ export default async function CollectionPage() {
 }
 
 async function CollectionContent() {
-  const [user, cards, sets] = await Promise.all([
-    requireUser(),
-    getAllCards(),
-    getAllSets(),
-  ]);
+  const user = await requireUser();
 
   // Get or create default collection
   let collection = await prisma.collection.findFirst({
@@ -149,9 +147,7 @@ async function CollectionContent() {
 
   return (
     <>
-      <CardBrowser
-        cards={cards}
-        sets={sets as SetInfo[]}
+      <CardCatalogBrowser
         header={statsHeader}
         overlay={overlayEntries}
         showOwnedToggle

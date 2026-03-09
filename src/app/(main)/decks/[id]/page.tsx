@@ -4,10 +4,11 @@ import type { Metadata } from "next";
 import dynamic from "next/dynamic";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getAllCards, getAllSets } from "@/lib/data";
+import { getAllCards, getAllSets, preloadCatalog } from "@/lib/data";
 import { getDeckWithCards } from "@/lib/data-user";
 import { CardBrowserSkeleton } from "@/components/skeletons";
 import type { SetInfo } from "@/lib/types";
+import type { DeckDetail } from "@/lib/data-user";
 
 const DeckEditorView = dynamic(
   () =>
@@ -29,6 +30,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
 export default async function DeckEditorPage({ params }: PageProps) {
   const { id } = await params;
+  preloadCatalog();
 
   return (
     <main className="container mx-auto px-3 sm:px-4 py-4 sm:py-6 max-w-[1400px]">
@@ -40,14 +42,19 @@ export default async function DeckEditorPage({ params }: PageProps) {
 }
 
 async function DeckEditorContent({ deckId }: { deckId: string }) {
-  const [user, allCards, sets, deck] = await Promise.all([
+  const [user, deck] = await Promise.all([
     requireUser(),
-    getAllCards(),
-    getAllSets(),
     getDeckWithCards(deckId),
   ]);
 
   if (!deck || deck.userId !== user.id) notFound();
+
+  return <DeckEditorWithCatalog deck={deck} />;
+}
+
+/** Fetches catalog data internally — no prop drilling from parent. */
+async function DeckEditorWithCatalog({ deck }: { deck: DeckDetail }) {
+  const [allCards, sets] = await Promise.all([getAllCards(), getAllSets()]);
 
   return (
     <DeckEditorView
