@@ -1,9 +1,18 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { ExternalLink } from "lucide-react";
-import { PriceChart } from "@/components/price-chart";
+import { Skeleton } from "@/components/ui/skeleton";
 import type { VariantPrice } from "@/lib/types";
 import { cn } from "@/lib/utils";
+
+const PriceChart = dynamic(
+  () =>
+    import("@/components/price-chart").then((m) => ({
+      default: m.PriceChart,
+    })),
+  { ssr: false, loading: () => <Skeleton className="h-40 w-full rounded-lg" /> }
+);
 
 interface PriceDisplayProps {
   prices: VariantPrice[];

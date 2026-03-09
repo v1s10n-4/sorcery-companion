@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidateTag } from "next/cache";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
@@ -97,7 +97,6 @@ export async function previewCsvImport(
   const lines = csvContent.trim().split("\n");
   if (lines.length < 2) return { rows: [], matchedCount: 0, totalCount: 0 };
 
-  // Skip header
   const dataLines = lines.slice(1);
   const rows: ImportPreviewRow[] = [];
 
@@ -112,7 +111,6 @@ export async function previewCsvImport(
     const condition = fields[5]?.trim() || "NM";
     const purchasePrice = fields[6] ? parseFloat(fields[6]) : null;
 
-    // Try to match variant
     const variant = await prisma.cardVariant.findFirst({
       where: {
         card: { name: { equals: cardName, mode: "insensitive" } },
@@ -196,7 +194,7 @@ export async function executeCsvImport(rows: ImportPreviewRow[]) {
     imported++;
   }
 
-  revalidatePath("/collection");
+  revalidateTag(`collection:${user.id}`, "max");
   return { imported };
 }
 
@@ -210,7 +208,6 @@ export async function previewDecklistImport(text: string) {
   const rows: ImportPreviewRow[] = [];
 
   for (const line of lines) {
-    // Parse: "4x Card Name (Set)" or "4 Card Name"
     const match = line.match(
       /^(\d+)x?\s+(.+?)(?:\s*\(([^)]+)\))?\s*$/i
     );

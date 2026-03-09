@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidateTag } from "next/cache";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
@@ -46,6 +46,16 @@ export async function updateCollectionSharing(data: {
     },
   });
 
-  revalidatePath("/collection");
+  // Bust collection caches
+  revalidateTag(`collection:${user.id}`, "max");
+
+  // Bust old and new public collection slugs
+  if (collection.slug) {
+    revalidateTag(`public-collection:${collection.slug}`, "max");
+  }
+  if (slug && slug !== collection.slug) {
+    revalidateTag(`public-collection:${slug}`, "max");
+  }
+
   return { success: true, slug };
 }

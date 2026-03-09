@@ -1,35 +1,36 @@
 /**
- * Cached data-fetching functions using Next.js "use cache" directive.
+ * Cached data-fetching functions — Next.js "use cache" directive.
  *
  * Strategy: tag-only invalidation — no time-based expiry.
- *   cacheLife("max")  → permanent cache (stale/revalidate/expire = Infinity)
+ *   cacheLife("max")  → permanent (stale/revalidate/expire = Infinity)
  *   cacheTag(...)     → on-demand invalidation via revalidateTag()
  *
- * Tags in use:
- *   "cards"           → all card data (getAllCards, getCard, getAllCardIds, getSetCards)
- *   "card-{id}"       → individual card (getCard)
- *   "sets"            → all set data (getAllSets, getFullSets, getSetBySlug, getAllSetSlugs)
- *   "set-{slug}"      → individual set page data (getSetBySlug)
- *   "set-cards-{id}"  → cards within a set (getSetCards)
+ * Tag taxonomy:
+ *   "catalog:cards"       → all card data (getAllCards, getCard, getAllCardIds, getSetCards, counts)
+ *   "card:{id}"           → single card detail (getCard)
+ *   "catalog:sets"        → all set data (getAllSets, getFullSets, getSetBySlug, getAllSetSlugs)
+ *   "set:{slug}"          → single set page (getSetBySlug)
+ *   "set-grid:{setId}"    → paginated cards in a set (getSetCards)
  *
- * To invalidate on data change:
+ * To invalidate:
  *   import { revalidateTag } from "next/cache";
- *   revalidateTag("cards");          // bust every card cache entry
- *   revalidateTag("card-abc123");    // bust one card detail page
- *   revalidateTag("sets");           // bust all set listing caches
- *   revalidateTag("set-beta");       // bust one set page
+ *   revalidateTag("catalog:cards");   // bust every card cache
+ *   revalidateTag("card:abc123");     // bust one card detail
+ *   revalidateTag("catalog:sets");    // bust all set listings
+ *   revalidateTag("set:beta");        // bust one set page
+ *   revalidateTag("set-grid:xyz");    // bust card grid for one set
  */
 
 import { cacheLife, cacheTag } from "next/cache";
 import { prisma } from "./prisma";
 import type { BrowserCard, SetInfo } from "./types";
 
-// ── Home page data ──
+// ── Home page / card browser ──
 
 export async function getAllCards(): Promise<BrowserCard[]> {
   "use cache";
   cacheLife("max");
-  cacheTag("cards");
+  cacheTag("catalog:cards");
 
   const raw = await prisma.card.findMany({
     select: {
@@ -103,7 +104,7 @@ export async function getAllCards(): Promise<BrowserCard[]> {
 export async function getAllSets(): Promise<SetInfo[]> {
   "use cache";
   cacheLife("max");
-  cacheTag("sets");
+  cacheTag("catalog:sets");
 
   return prisma.set.findMany({
     orderBy: { releasedAt: "asc" },
@@ -113,15 +114,11 @@ export async function getAllSets(): Promise<SetInfo[]> {
 
 // ── Card detail ──
 
-/**
- * Returns all card IDs — used by generateStaticParams for /cards/[id].
- * Tagged with "cards" so a revalidateTag("cards") call will also trigger
- * a rebuild of this list on the next build/ISR cycle.
- */
+/** All card IDs — used by generateStaticParams for /cards/[id]. */
 export async function getAllCardIds(): Promise<{ id: string }[]> {
   "use cache";
   cacheLife("max");
-  cacheTag("cards");
+  cacheTag("catalog:cards");
 
   return prisma.card.findMany({ select: { id: true } });
 }
@@ -129,7 +126,7 @@ export async function getAllCardIds(): Promise<{ id: string }[]> {
 export async function getCard(id: string) {
   "use cache";
   cacheLife("max");
-  cacheTag("cards", `card-${id}`);
+  cacheTag("catalog:cards", `card:${id}`);
 
   return prisma.card.findUnique({
     where: { id },
@@ -164,7 +161,7 @@ export async function getCard(id: string) {
 export async function getFullSets() {
   "use cache";
   cacheLife("max");
-  cacheTag("sets");
+  cacheTag("catalog:sets");
 
   return prisma.set.findMany({
     orderBy: { releasedAt: "asc" },
@@ -174,7 +171,7 @@ export async function getFullSets() {
 export async function getSetBySlug(slug: string) {
   "use cache";
   cacheLife("max");
-  cacheTag("sets", `set-${slug}`);
+  cacheTag("catalog:sets", `set:${slug}`);
 
   return prisma.set.findUnique({ where: { slug } });
 }
@@ -182,7 +179,7 @@ export async function getSetBySlug(slug: string) {
 export async function getSetCards(setId: string, page: number, pageSize: number) {
   "use cache";
   cacheLife("max");
-  cacheTag("cards", `set-cards-${setId}`);
+  cacheTag("catalog:cards", `set-grid:${setId}`);
 
   const where = { sets: { some: { setId } } };
   const [cards, totalCount] = await Promise.all([
@@ -208,7 +205,36 @@ export async function getSetCards(setId: string, page: number, pageSize: number)
 export async function getAllSetSlugs() {
   "use cache";
   cacheLife("max");
-  cacheTag("sets");
+  cacheTag("catalog:sets");
 
   return prisma.set.findMany({ select: { slug: true } });
+}
+
+// ── Global counts (used by collection stats) ──
+
+export async function getTotalCardCount() {
+  "use cache";
+  cacheLife("max");
+  cacheTag("catalog:cards");
+
+  return prisma.card.count();
+}
+
+export async function getTotalVariantCount() {
+  "use cache";
+  cacheLife("max");
+  cacheTag("catalog:cards");
+
+  return prisma.cardVariant.count();
+}
+
+export async function getSetCardCounts() {
+  "use cache";
+  cacheLife("max");
+  cacheTag("catalog:cards", "catalog:sets");
+
+  return prisma.cardSet.groupBy({
+    by: ["setId"],
+    _count: true,
+  });
 }

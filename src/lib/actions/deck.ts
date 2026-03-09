@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -24,6 +24,7 @@ export async function createDeck(name: string) {
     data: { name, userId: user.id },
   });
 
+  revalidateTag(`decks:${user.id}`, "max");
   redirect(`/decks/${deck.id}`);
 }
 
@@ -33,7 +34,8 @@ export async function deleteDeck(deckId: string) {
   if (!deck || deck.userId !== user.id) throw new Error("Not found");
 
   await prisma.deck.delete({ where: { id: deckId } });
-  revalidatePath("/decks");
+  revalidateTag(`decks:${user.id}`, "max");
+  revalidateTag(`deck:${deckId}`, "max");
   return { success: true };
 }
 
@@ -52,7 +54,8 @@ export async function updateDeck(
   }
 
   await prisma.deck.update({ where: { id: deckId }, data: { ...data, slug } });
-  revalidatePath(`/decks/${deckId}`);
+  revalidateTag(`decks:${user.id}`, "max");
+  revalidateTag(`deck:${deckId}`, "max");
   return { success: true };
 }
 
@@ -81,7 +84,6 @@ export async function addCardToDeck(
   if (section === "spellbook" && (card.type === "Avatar" || card.type === "Site")) {
     throw new Error("Avatar and Site cards cannot be in the Spellbook");
   }
-  // Collection (sideboard) can hold any non-Avatar card
   if (section === "collection" && card.type === "Avatar") {
     throw new Error("Avatar cards cannot be in the Collection (sideboard)");
   }
@@ -90,7 +92,6 @@ export async function addCardToDeck(
   if (section === "avatar") {
     const existing = deck.cards.find((c) => c.section === "avatar");
     if (existing) {
-      // Replace existing avatar
       await prisma.deckCard.delete({ where: { id: existing.id } });
     }
   }
@@ -133,7 +134,8 @@ export async function addCardToDeck(
     });
   }
 
-  revalidatePath(`/decks/${deckId}`);
+  revalidateTag(`deck:${deckId}`, "max");
+  revalidateTag(`decks:${user.id}`, "max");
   return { success: true };
 }
 
@@ -154,7 +156,8 @@ export async function removeCardFromDeck(deckCardId: string) {
     await prisma.deckCard.delete({ where: { id: deckCardId } });
   }
 
-  revalidatePath(`/decks/${dc.deck.id}`);
+  revalidateTag(`deck:${dc.deck.id}`, "max");
+  revalidateTag(`decks:${user.id}`, "max");
   return { success: true };
 }
 
@@ -168,7 +171,7 @@ export async function searchCardsForDeck(
       : section === "atlas"
         ? { type: "Site" }
         : section === "collection"
-          ? { type: { not: "Avatar" } } // sideboard: any non-Avatar
+          ? { type: { not: "Avatar" } }
           : { type: { notIn: ["Avatar", "Site"] } };
 
   const cards = await prisma.card.findMany({
@@ -206,7 +209,7 @@ export async function searchCardsForDeck(
 export interface BatchDeckItem {
   cardId: string;
   quantity: number;
-  section?: "avatar" | "atlas" | "spellbook" | "collection"; // auto-detect if not provided
+  section?: "avatar" | "atlas" | "spellbook" | "collection";
 }
 
 /** Add multiple cards to a deck in one batch */
@@ -245,8 +248,6 @@ export async function batchAddToDeck(deckId: string, items: BatchDeckItem[]) {
 
   let added = 0;
 
-  // Build a deduplicated list of upsert ops — process serially in a transaction
-  // to avoid (deckId, cardId) unique constraint races from concurrent creates.
   type UpsertOp =
     | { kind: "delete-avatar"; id: string }
     | { kind: "upsert"; cardId: string; section: string; qty: number; existingId: string | null; existingQty: number };
@@ -257,7 +258,6 @@ export async function batchAddToDeck(deckId: string, items: BatchDeckItem[]) {
     const card = cardMap.get(item.cardId);
     if (!card) continue;
 
-    // Auto-detect section from card type if not provided
     const section = item.section ??
       (card.type === "Avatar" ? "avatar" :
        card.type === "Site" ? "atlas" : "spellbook");
@@ -275,7 +275,6 @@ export async function batchAddToDeck(deckId: string, items: BatchDeckItem[]) {
       : section === "collection" ? COLLECTION_SIZE
       : 1;
 
-    // Look up any existing record for this card in the deck (any section)
     const existingAny = deck.cards.find((c) => c.cardId === item.cardId);
     const existingInSection = deckState.get(`${item.cardId}-${section}`);
     const currentQty = existingInSection?.quantity ?? 0;
@@ -294,10 +293,9 @@ export async function batchAddToDeck(deckId: string, items: BatchDeckItem[]) {
       if (existingAvatar && existingAvatar.cardId !== item.cardId) {
         ops.push({ kind: "delete-avatar", id: existingAvatar.id });
       }
-      if (existingInSection) continue; // already this avatar
+      if (existingInSection) continue;
       ops.push({ kind: "upsert", cardId: item.cardId, section, qty: 1, existingId: null, existingQty: 0 });
       added += 1;
-      // Update in-memory state so subsequent items see it
       deckState.set(`${item.cardId}-${section}`, { id: "pending", quantity: 1, section });
       sectionTotals[section] = (sectionTotals[section] ?? 0) + 1;
       continue;
@@ -312,7 +310,6 @@ export async function batchAddToDeck(deckId: string, items: BatchDeckItem[]) {
       existingQty: currentQty,
     });
 
-    // Update in-memory state for next iterations targeting the same card
     const stateKey = `${item.cardId}-${section}`;
     const cur = deckState.get(stateKey);
     if (cur) cur.quantity += canAdd;
@@ -321,14 +318,11 @@ export async function batchAddToDeck(deckId: string, items: BatchDeckItem[]) {
     added += canAdd;
   }
 
-  // Execute all ops in a transaction, serially (no concurrent creates)
   await prisma.$transaction(
     ops.map((op) => {
       if (op.kind === "delete-avatar") {
         return prisma.deckCard.delete({ where: { id: op.id } });
       }
-      // Use updateMany + create (upsert) to avoid the (deckId, cardId) race
-      // updateMany matches on deckId+cardId, create only runs if no match
       return prisma.deckCard.upsert({
         where: { deckId_cardId: { deckId, cardId: op.cardId } },
         update: { quantity: { increment: op.qty }, section: op.section },
@@ -337,6 +331,7 @@ export async function batchAddToDeck(deckId: string, items: BatchDeckItem[]) {
     })
   );
 
-  revalidatePath(`/decks/${deckId}`);
+  revalidateTag(`deck:${deckId}`, "max");
+  revalidateTag(`decks:${user.id}`, "max");
   return { success: true, added };
 }

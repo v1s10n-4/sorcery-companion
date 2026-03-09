@@ -1,8 +1,25 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidateTag } from "next/cache";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+
+// ── Helper: bust all collection-related caches for a user ──
+
+async function revalidateCollection(userId: string) {
+  revalidateTag(`collection:${userId}`, "max");
+
+  // Also bust the public collection page if the user has a public slug
+  const collection = await prisma.collection.findFirst({
+    where: { userId },
+    select: { slug: true, isPublic: true },
+  });
+  if (collection?.slug && collection.isPublic) {
+    revalidateTag(`public-collection:${collection.slug}`, "max");
+  }
+}
+
+// ── Actions ──
 
 interface AddToCollectionInput {
   variantId: string;
@@ -44,7 +61,6 @@ export async function addToCollection(input: AddToCollectionInput) {
 
   if (!variant) throw new Error("Variant not found");
 
-  // Default purchase price to current market price if not specified
   const currentMarketPrice =
     variant.tcgplayerProducts[0]?.priceSnapshots[0]?.marketPrice ?? null;
   const purchasePrice =
@@ -85,14 +101,13 @@ export async function addToCollection(input: AddToCollectionInput) {
     });
   }
 
-  revalidatePath("/collection");
+  await revalidateCollection(user.id);
   return { success: true };
 }
 
 export async function removeFromCollection(collectionCardId: string) {
   const user = await requireUser();
 
-  // Verify ownership
   const card = await prisma.collectionCard.findUnique({
     where: { id: collectionCardId },
     include: { collection: { select: { userId: true } } },
@@ -106,7 +121,7 @@ export async function removeFromCollection(collectionCardId: string) {
     where: { id: collectionCardId },
   });
 
-  revalidatePath("/collection");
+  await revalidateCollection(user.id);
   return { success: true };
 }
 
@@ -114,11 +129,10 @@ export async function removeFromCollection(collectionCardId: string) {
 export async function addToCollectionByCard(cardId: string) {
   await requireUser();
 
-  // Find the default Standard variant for this card
   const variant = await prisma.cardVariant.findFirst({
     where: { cardId },
     orderBy: [
-      { finish: "asc" }, // "Standard" sorts before other finishes
+      { finish: "asc" },
       { createdAt: "asc" },
     ],
     select: {
@@ -140,7 +154,7 @@ export async function addToCollectionByCard(cardId: string) {
   return addToCollection({
     variantId: variant.id,
     quantity: 1,
-    purchasePrice: null, // will default to market price in addToCollection
+    purchasePrice: null,
   });
 }
 
@@ -168,7 +182,7 @@ export async function updateCollectionCard(
     data,
   });
 
-  revalidatePath("/collection");
+  await revalidateCollection(user.id);
   return { success: true };
 }
 
@@ -219,7 +233,6 @@ export async function removeFromCollectionByCardId(cardId: string, quantity: num
   });
   if (!collection) throw new Error("No collection");
 
-  // Find collection cards matching this cardId
   const collectionCards = await prisma.collectionCard.findMany({
     where: { collectionId: collection.id, cardId },
     orderBy: { createdAt: "asc" },
@@ -240,7 +253,7 @@ export async function removeFromCollectionByCardId(cardId: string, quantity: num
     }
   }
 
-  revalidatePath("/collection");
+  await revalidateCollection(user.id);
   return { success: true };
 }
 
@@ -249,7 +262,7 @@ export async function removeFromCollectionByCardId(cardId: string, quantity: num
 export interface BatchCollectionItem {
   cardId: string;
   quantity: number;
-  variantId?: string; // override variant, otherwise resolves default
+  variantId?: string;
 }
 
 /** Add multiple cards to collection in one batch */
@@ -267,7 +280,6 @@ export async function batchAddToCollection(items: BatchCollectionItem[]) {
     });
   }
 
-  // Resolve variants for all cards at once
   const cardIds = [...new Set(items.map((i) => i.cardId))];
   const variants = await prisma.cardVariant.findMany({
     where: { cardId: { in: cardIds } },
@@ -288,17 +300,14 @@ export async function batchAddToCollection(items: BatchCollectionItem[]) {
     },
   });
 
-  // Build cardId → default variant map
   const defaultVariantMap = new Map<string, typeof variants[0]>();
   for (const v of variants) {
     if (!defaultVariantMap.has(v.cardId)) {
       defaultVariantMap.set(v.cardId, v);
     }
   }
-  // Also build variantId → variant for overrides
   const variantById = new Map(variants.map((v) => [v.id, v]));
 
-  // Get existing collection cards for upsert
   const existingCards = await prisma.collectionCard.findMany({
     where: { collectionId: collection.id, cardId: { in: cardIds } },
   });
@@ -327,7 +336,6 @@ export async function batchAddToCollection(items: BatchCollectionItem[]) {
           data: { quantity: existing.quantity + item.quantity },
         })
       );
-      // Update map for subsequent items targeting same card
       existing.quantity += item.quantity;
     } else {
       const newCard = {
@@ -346,7 +354,7 @@ export async function batchAddToCollection(items: BatchCollectionItem[]) {
   }
 
   await Promise.all(operations);
-  revalidatePath("/collection");
+  await revalidateCollection(user.id);
   return { success: true, added };
 }
 
@@ -366,7 +374,6 @@ export async function batchRemoveFromCollection(items: { cardId: string; quantit
     orderBy: { createdAt: "asc" },
   });
 
-  // Group by cardId
   const byCard = new Map<string, typeof collectionCards>();
   for (const cc of collectionCards) {
     const arr = byCard.get(cc.cardId) ?? [];
@@ -400,6 +407,6 @@ export async function batchRemoveFromCollection(items: { cardId: string; quantit
   }
 
   await Promise.all(operations);
-  revalidatePath("/collection");
+  await revalidateCollection(user.id);
   return { success: true, removed };
 }

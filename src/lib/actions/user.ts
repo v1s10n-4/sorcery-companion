@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidateTag } from "next/cache";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
@@ -13,7 +13,7 @@ export async function updateProfile(data: { name: string }) {
     data: { name: data.name },
   });
 
-  revalidatePath("/settings");
+  revalidateTag(`user:${user.id}`, "max");
   return { success: true };
 }
 
@@ -26,6 +26,11 @@ export async function deleteAccount() {
 
   // Sign out
   await supabase.auth.signOut();
+
+  // Bust all user-related caches
+  revalidateTag(`user:${user.id}`, "max");
+  revalidateTag(`collection:${user.id}`, "max");
+  revalidateTag(`decks:${user.id}`, "max");
 
   return { success: true };
 }
