@@ -53,7 +53,7 @@ export default function Page() {
           <a
             target="_blank"
             rel="noopener"
-            href="https://sorcery-companion.sentry.io/issues/?project=4511019790106704"
+            href="https://v1s10n-4.sentry.io/issues/?project=4511019790106704"
           >
             Issues Page
           </a>
