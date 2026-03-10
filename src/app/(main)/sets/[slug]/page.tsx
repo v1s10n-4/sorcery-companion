@@ -16,14 +16,21 @@ interface PageProps {
   searchParams: Promise<{ page?: string }>;
 }
 
-// Unknown slugs → 404 (don't fall through to server render)
-export const dynamicParams = false;
+// Allow slugs not known at build time to render on first request (ISR).
+// The page body still calls notFound() for slugs that don't exist in the DB.
+export const dynamicParams = true;
 
-// ── Static params (pre-render all sets) ──
+// ── Static params (pre-render all sets at build time) ──
 
 export async function generateStaticParams() {
-  const sets = await getAllSetSlugs();
-  return sets.map((s) => ({ slug: s.slug }));
+  try {
+    const sets = await getAllSetSlugs();
+    return sets.map((s) => ({ slug: s.slug }));
+  } catch {
+    // DB unreachable at build time (e.g. Vercel build environment).
+    // Pages will be generated on first request and then cached.
+    return [];
+  }
 }
 
 // ── Metadata ──
