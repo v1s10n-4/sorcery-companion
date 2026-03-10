@@ -15,22 +15,15 @@ interface PageProps {
   params: Promise<{ id: string }>;
 }
 
-// Allow IDs not known at build time to render on first request (ISR).
-// The page body still calls notFound() for IDs that don't exist in the DB.
-export const dynamicParams = true;
+// Unknown IDs → 404; never fall through to a dynamic render.
+export const dynamicParams = false;
 
 // ── Static params (pre-render every card at build time) ──
 
 export async function generateStaticParams() {
-  try {
-    return getAllCardIds();
-    // Returns [{ id: "abc" }, { id: "def" }, ...] — Next.js pre-renders all.
-    // Revalidate via: revalidateTag("catalog:cards") or revalidateTag("card:{id}")
-  } catch {
-    // DB unreachable at build time (e.g. Vercel build environment).
-    // Pages will be generated on first request and then cached.
-    return [];
-  }
+  return getAllCardIds();
+  // Returns [{ id: "abc" }, { id: "def" }, ...] — Next.js pre-renders all.
+  // Revalidate via: revalidateTag("cards") or revalidateTag("card-{id}")
 }
 
 // ── Metadata ──
