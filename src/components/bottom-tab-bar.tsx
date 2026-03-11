@@ -29,12 +29,12 @@ export function BottomTabBar() {
       <div className="h-16 sm:hidden" aria-hidden />
 
       <nav
-        className="
+        className={`
           sm:hidden fixed bottom-0 left-0 right-0 z-40
           bg-card/95 backdrop-blur-md border-t border-border/50
           flex items-end justify-around
           pb-[env(safe-area-inset-bottom,0px)]
-        "
+        `}
         aria-label="Mobile navigation"
       >
         {TABS.map((tab) => {
