@@ -25,7 +25,7 @@ const s3 = new S3Client({
 });
 
 const pool = new pg.Pool({
-  connectionString: process.env.DIRECT_URL,
+  connectionString: process.env.POSTGRES_URL_NON_POOLING,
 });
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });

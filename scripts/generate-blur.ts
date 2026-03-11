@@ -18,7 +18,7 @@ const CONCURRENCY = parseInt(
 const FORCE = process.argv.includes("--force");
 
 const pool = new pg.Pool({
-  connectionString: process.env.DIRECT_URL || process.env.DATABASE_URL,
+  connectionString: process.env.POSTGRES_URL_NON_POOLING,
   ssl: { rejectUnauthorized: false },
 });
 
