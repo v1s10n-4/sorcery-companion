@@ -15,9 +15,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import pg from "pg";
 
 const DB_URL =
-  process.env.DIRECT_URL ||
-  process.env.DATABASE_URL ||
-  "postgresql://postgres:9lwYZvpK75kFoiLl@db.wainhxavewgcarxhdicu.supabase.co:5432/postgres";
+  process.env.POSTGRES_URL_NON_POOLING;
 
 const SEARCH_API = "https://mp-search-api.tcgplayer.com/v1/search/request";
 const PRICE_API = "https://mpapi.tcgplayer.com/v2/product";

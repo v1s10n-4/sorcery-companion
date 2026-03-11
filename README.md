@@ -85,7 +85,8 @@ npm run lint
 ### Environment variables
 
 ```env
-DATABASE_URL=
+POSTGRES_URL=
+POSTGRES_URL_NON_POOLING=
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SORCERY_LENS_URL=          # card scanner API (optional)
