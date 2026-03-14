@@ -1,5 +1,6 @@
 "use server";
 
+import { cacheLife, cacheTag } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { batchAddToCollection } from "@/lib/actions/collection";
@@ -219,66 +220,45 @@ export async function resolveVariantForCard(
   setSlug: string | null,
   preferFoil: boolean = false,
 ): Promise<ResolvedVariant | null> {
-  const variantSelect = {
-    id: true,
-    slug: true,
-    finish: true,
-    set: {
-      select: {
-        set: {
-          select: { name: true, slug: true, releasedAt: true },
-        },
-      },
-    },
-    tcgplayerProducts: {
-      select: {
-        priceSnapshots: {
-          orderBy: { recordedAt: "desc" as const },
-          take: 1,
-          select: { marketPrice: true },
-        },
-      },
-      take: 1,
-    },
-  };
-
-  // Desired finish: Standard by default, Foil only if explicitly toggled
   const targetFinish = preferFoil ? "Foil" : "Standard";
 
-  // 1. If user locked a set, try that set + target finish first
-  if (setSlug) {
-    const inSet = await prisma.cardVariant.findFirst({
-      where: { cardId, finish: targetFinish, set: { set: { slug: setSlug } } },
-      select: variantSelect,
-    });
-    if (inSet) return toResolved(inSet);
-
-    // Fallback: any finish in locked set
-    const anyFinish = await prisma.cardVariant.findFirst({
-      where: { cardId, set: { set: { slug: setSlug } } },
-      orderBy: { finish: "asc" },
-      select: variantSelect,
-    });
-    if (anyFinish) return toResolved(anyFinish);
-  }
-
-  // 2. No locked set → latest set, Standard finish
-  //    Order by set release date DESC → newest set first
-  const latest = await prisma.cardVariant.findFirst({
-    where: { cardId, finish: targetFinish },
-    orderBy: { set: { set: { releasedAt: "desc" } } },
-    select: variantSelect,
-  });
-  if (latest) return toResolved(latest);
-
-  // 3. Absolute fallback: any variant, Standard preferred
-  const fallback = await prisma.cardVariant.findFirst({
+  const variants = await prisma.cardVariant.findMany({
     where: { cardId },
-    orderBy: [{ finish: "asc" }, { set: { set: { releasedAt: "desc" } } }],
-    select: variantSelect,
+    select: {
+      id: true,
+      slug: true,
+      finish: true,
+      set: {
+        select: {
+          set: { select: { name: true, slug: true, releasedAt: true } },
+        },
+      },
+      tcgplayerProducts: {
+        select: {
+          priceSnapshots: {
+            orderBy: { recordedAt: "desc" as const },
+            take: 1,
+            select: { marketPrice: true },
+          },
+        },
+        take: 1,
+      },
+    },
+    orderBy: [{ set: { set: { releasedAt: "desc" } } }],
   });
-  if (!fallback) return null;
-  return toResolved(fallback);
+
+  if (variants.length === 0) return null;
+
+  let best: (typeof variants)[0] | null = null;
+  if (setSlug) {
+    best = variants.find(v => v.set.set.slug === setSlug && v.finish === targetFinish) ?? null;
+    if (!best) best = variants.find(v => v.set.set.slug === setSlug) ?? null;
+  }
+  if (!best) best = variants.find(v => v.finish === targetFinish) ?? null;
+  if (!best) best = variants[0] ?? null;
+
+  if (!best) return null;
+  return toResolved(best);
 }
 
 /** Check if a foil variant exists for a card in a given set */
@@ -322,6 +302,9 @@ function toResolved(v: {
 // ── Get all variants for a card (for variant picker in result card) ──────────
 
 export async function getCardVariants(cardId: string): Promise<CardVariantOption[]> {
+  "use cache";
+  cacheLife("max");
+  cacheTag("catalog:cards", `card:${cardId}`);
   const variantSelect = {
     id: true,
     slug: true,
@@ -358,6 +341,9 @@ export async function getCardVariants(cardId: string): Promise<CardVariantOption
 // ── Get ALL sets (for the session-wide set locker) ──────────────────────────
 
 export async function getScanSets(): Promise<ScanSet[]> {
+  "use cache";
+  cacheLife("max");
+  cacheTag("catalog:sets");
   const sets = await prisma.set.findMany({
     select: {
       id: true,
@@ -379,6 +365,9 @@ export async function getScanSets(): Promise<ScanSet[]> {
 // ── Get sets where a specific card exists (for per-card set picker) ─────────
 
 export async function getSetsForCard(cardId: string): Promise<ScanSet[]> {
+  "use cache";
+  cacheLife("max");
+  cacheTag("catalog:cards", `card:${cardId}`);
   // Find all sets that have at least one variant of this card
   const sets = await prisma.set.findMany({
     where: {
