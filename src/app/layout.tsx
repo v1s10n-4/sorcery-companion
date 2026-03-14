@@ -3,6 +3,7 @@ import { Cinzel, Inter } from "next/font/google";
 import { Suspense } from "react";
 import { Analytics } from "@vercel/analytics/next";
 import { BottomTabBar } from "@/components/bottom-tab-bar";
+import { ViewTransitionHandler } from "@/components/view-transition-handler";
 import "./globals.css";
 
 const cinzel = Cinzel({
@@ -72,10 +73,10 @@ export default function RootLayout({
         className={`${cinzel.variable} ${inter.variable} antialiased min-h-screen bg-background text-foreground font-sans`}
       >
         {children}
-        {/* BottomTabBar uses usePathname() — dynamic hook — must be in Suspense
-            so PPR can prerender the static page shell without it */}
+        {/* Both components use usePathname() — dynamic — must be inside Suspense */}
         <Suspense>
           <BottomTabBar />
+          <ViewTransitionHandler />
         </Suspense>
         <Analytics />
       </body>

@@ -125,3 +125,44 @@
     @apply bg-background text-foreground;
   }
 }
+/* ─── View Transitions ──────────────────────────────────────────────────── */
+
+/* Root page transition — subtle fade + lift.
+   Applied to all navigations that don't have a named element morph. */
+::view-transition-old(root) {
+  animation: 180ms ease-out both vt-fade-out;
+}
+::view-transition-new(root) {
+  animation: 220ms ease-in both vt-fade-in;
+}
+
+@keyframes vt-fade-out {
+  from { opacity: 1; transform: translateY(0); }
+  to   { opacity: 0; transform: translateY(-6px); }
+}
+@keyframes vt-fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Card image morph — override the root animation for the named element so
+   the browser handles the position/size interpolation naturally (no fade). */
+::view-transition-old(card-*),
+::view-transition-new(card-*) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+/* The image group itself morphs between positions — give it a quick easing */
+::view-transition-group(card-*) {
+  animation-duration: 300ms;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Respect user preference */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root),
+  ::view-transition-group(card-*) {
+    animation: none;
+  }
+}

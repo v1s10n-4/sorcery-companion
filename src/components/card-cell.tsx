@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useCallback, memo } from "react";
-import Link from "next/link";
+import { ViewTransitionLink as Link } from "@/components/view-transition-link";
 import { useSelectionStore } from "@/stores/selection-store";
 import { CardImage } from "@/components/card-image";
 import { cn } from "@/lib/utils";
@@ -162,6 +162,7 @@ export const CardCell = memo(function CardCell({
             "relative overflow-hidden rounded-lg bg-muted/30",
             selectedQty > 0 && "ring-2 ring-amber-500"
           )}
+          style={{ viewTransitionName: `card-${card.id}` }}
         >
           {card.variantSlug ? (
             <CardImage

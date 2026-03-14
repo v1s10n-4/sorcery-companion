@@ -27,23 +27,25 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   return { title: deck ? `${deck.name} — Sorcery Companion` : "Deck Not Found" };
 }
 
-export default async function DeckEditorPage({ params }: PageProps) {
-  const { id } = await params;
-  preloadCatalog();
-
+// Page shell is sync — params are resolved inside Suspense for PPR compatibility
+// (no generateStaticParams on this route, so params are dynamic per request)
+export default function DeckEditorPage({ params }: PageProps) {
   return (
     <main className="container mx-auto px-3 sm:px-4 py-4 sm:py-6 max-w-[1400px]">
       <Suspense fallback={<CardBrowserSkeleton />}>
-        <DeckEditorContent deckId={id} />
+        <DeckEditorContent params={params} />
       </Suspense>
     </main>
   );
 }
 
-async function DeckEditorContent({ deckId }: { deckId: string }) {
+async function DeckEditorContent({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  preloadCatalog();
+
   const [user, deck] = await Promise.all([
     requireUser(),
-    getDeckWithCards(deckId),
+    getDeckWithCards(id),
   ]);
 
   if (!deck || deck.userId !== user.id) notFound();
