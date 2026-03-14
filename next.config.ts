@@ -4,6 +4,7 @@ const nextConfig: NextConfig = {
   reactCompiler: true,
   experimental: {
     useCache: true,
+    cacheComponents: true,
     // Optimise barrel-file imports for heavy icon/component libs.
     // Next.js rewrites them to direct deep imports at build time,
     // reducing bundle size and cold-start time.

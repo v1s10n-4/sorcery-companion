@@ -5,6 +5,8 @@ import { getPublicCollection, getPublicCollectionMeta } from "@/lib/data-user";
 import { PublicCollectionView } from "@/components/collection/public-collection-view";
 import { PublicCollectionSkeleton } from "@/components/skeletons";
 
+export const experimental_ppr = true;
+
 interface PageProps {
   params: Promise<{ slug: string }>;
 }

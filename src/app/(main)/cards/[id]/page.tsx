@@ -112,14 +112,6 @@ async function CardDetailContent({ id }: { id: string }) {
         blurDataUrl: v.blurDataUrl,
         prices: (v.tcgplayerProducts ?? []).map((tp): VariantPrice => {
           const latest = tp.priceSnapshots[0];
-          // Deduplicate snapshots by date, keep latest per day
-          const byDate = new Map<string, number>();
-          for (const snap of [...tp.priceSnapshots].reverse()) {
-            if (snap.marketPrice != null) {
-              const date = String(snap.recordedAt).slice(0, 10);
-              byDate.set(date, snap.marketPrice);
-            }
-          }
           return {
             tcgplayerProductId: tp.id,
             productUrl: tp.productUrl,
@@ -127,7 +119,7 @@ async function CardDetailContent({ id }: { id: string }) {
             marketPrice: latest?.marketPrice ?? null,
             lowPrice: latest?.lowPrice ?? null,
             medianPrice: latest?.medianPrice ?? null,
-            history: Array.from(byDate, ([date, price]) => ({ date, price })),
+            history: [], // loaded lazily by PriceChart when chart tab opens
           };
         }),
       })),
