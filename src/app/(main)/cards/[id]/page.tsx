@@ -75,8 +75,7 @@ async function CardDetailContent({ id }: { id: string }) {
   const raw = await getCard(id);
   if (!raw) notFound();
 
-  const bgSlug = raw.variants[0]?.slug;
-  const bgImageUrl = bgSlug ? `${CARD_IMAGE_BASE}/${bgSlug}.png` : null;
+  const bgBlurUrl = raw.variants[0]?.blurDataUrl ?? null;
 
   // Serialize into a clean, client-safe shape
   const printings: Printing[] = raw.sets.map((cs) => ({
@@ -155,12 +154,12 @@ async function CardDetailContent({ id }: { id: string }) {
 
   return (
     <>
-      {/* Blurred card art background — rendered after data loads */}
-      {bgImageUrl && (
+      {/* Blurred card art background — uses blurDataUrl (inline base64) to avoid a full PNG download */}
+      {bgBlurUrl && (
         <div
-          className="fixed inset-0 -z-10 opacity-[0.07] blur-3xl scale-125 pointer-events-none"
+          className="fixed inset-0 -z-10 opacity-[0.15] blur-3xl scale-125 pointer-events-none"
           style={{
-            backgroundImage: `url(${bgImageUrl})`,
+            backgroundImage: `url(${bgBlurUrl})`,
             backgroundSize: "cover",
             backgroundPosition: "center",
           }}
