@@ -8,6 +8,10 @@ const nextConfig: NextConfig = {
   cacheComponents: true,
   experimental: {
     useCache: true,
+    // Enable Next.js View Transition API integration.
+    // Pairs with CSS view-transition-name to morph card images between
+    // the grid (CardCell) and the detail page (CardDetailView).
+    viewTransition: true,
     // Optimise barrel-file imports for heavy icon/component libs.
     // Next.js rewrites them to direct deep imports at build time,
     // reducing bundle size and cold-start time.
