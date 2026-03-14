@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Cinzel, Inter } from "next/font/google";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
 import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { BottomTabBar } from "@/components/bottom-tab-bar";
 import "./globals.css";
@@ -79,6 +80,7 @@ export default function RootLayout({
           </TooltipProvider>
         </NuqsAdapter>
         <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );
