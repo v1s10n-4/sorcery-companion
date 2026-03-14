@@ -4,6 +4,7 @@ import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { preloadCatalog } from "@/lib/data";
 import { prisma } from "@/lib/prisma";
+import { getCollectionForUser } from "@/lib/data-user";
 import { CardCatalogBrowser } from "@/components/card-catalog-browser";
 import type { CardOverlayEntry } from "@/components/card-browser";
 import { SharingSettings } from "@/components/collection/sharing-settings";
@@ -32,74 +33,29 @@ async function CollectionContent() {
   const user = await requireUser();
 
   // Get or create default collection
-  let collection = await prisma.collection.findFirst({
-    where: { userId: user.id },
-    include: {
-      cards: {
-        include: {
-          card: { select: { id: true } },
-          variant: {
-            select: {
-              id: true,
-              slug: true,
-              finish: true,
-              tcgplayerProducts: {
-                select: {
-                  priceSnapshots: {
-                    orderBy: { recordedAt: "desc" as const },
-                    take: 1,
-                    select: { marketPrice: true },
-                  },
-                },
-                take: 1,
-              },
-            },
-          },
-        },
-      },
-    },
-  });
+  let collectionData = await getCollectionForUser(user.id);
 
-  if (!collection) {
-    collection = await prisma.collection.create({
+  if (!collectionData) {
+    // First visit — create the collection (write stays outside the cached fn)
+    const created = await prisma.collection.create({
       data: { name: "My Collection", userId: user.id },
-      include: {
-        cards: {
-          include: {
-            card: { select: { id: true } },
-            variant: {
-              select: {
-                id: true,
-                slug: true,
-                finish: true,
-                tcgplayerProducts: {
-                  select: {
-                    priceSnapshots: {
-                      orderBy: { recordedAt: "desc" as const },
-                      take: 1,
-                      select: { marketPrice: true },
-                    },
-                  },
-                  take: 1,
-                },
-              },
-            },
-          },
-        },
-      },
+      select: { id: true, isPublic: true, slug: true, description: true },
     });
+    collectionData = {
+      id: created.id,
+      isPublic: created.isPublic,
+      slug: created.slug,
+      description: created.description,
+      cards: [],
+    };
   }
 
-  const overlayEntries: CardOverlayEntry[] = collection.cards.map((cc) => {
-    const marketPrice =
-      cc.variant.tcgplayerProducts[0]?.priceSnapshots[0]?.marketPrice ?? null;
-    return {
-      cardId: cc.cardId,
-      quantity: cc.quantity,
-      marketPrice,
-      purchasePrice: cc.purchasePrice,
-    };
-  });
+  const overlayEntries: CardOverlayEntry[] = collectionData.cards.map((cc) => ({
+    cardId: cc.cardId,
+    quantity: cc.quantity,
+    marketPrice: cc.marketPrice,
+    purchasePrice: cc.purchasePrice,
+  }));
 
   const totalCards = overlayEntries.reduce((s, e) => s + e.quantity, 0);
   const totalMarketValue = overlayEntries.reduce(
@@ -156,10 +112,10 @@ async function CollectionContent() {
       />
       <div className="mt-6">
         <SharingSettings
-          collectionId={collection.id}
-          isPublic={collection.isPublic}
-          slug={collection.slug}
-          description={collection.description}
+          collectionId={collectionData.id}
+          isPublic={collectionData.isPublic}
+          slug={collectionData.slug}
+          description={collectionData.description}
         />
       </div>
     </>
