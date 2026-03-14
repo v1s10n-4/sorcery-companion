@@ -17,6 +17,7 @@ interface PageProps {
 }
 
 // Unknown slugs → 404 (don't fall through to server render)
+export const dynamicParams = false;
 
 // ── Static params (pre-render all sets) ──
 
