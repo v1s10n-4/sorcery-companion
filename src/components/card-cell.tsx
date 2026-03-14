@@ -17,11 +17,11 @@ interface OverlayData {
 }
 
 interface CardCellProps {
-  /** Global index in the grid — used to set image priority for above-fold cards */
-  index?: number;
   card: BrowserCard;
   overlayData?: OverlayData | null;
   hasOverlay: boolean;
+  /** Global grid index — used to prioritize above-fold image loading */
+  index?: number;
 }
 
 export const CardCell = memo(function CardCell({

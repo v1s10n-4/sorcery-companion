@@ -5,7 +5,6 @@ import {
   Search,
   X,
   CircleHelp,
-  Loader2,
   Eye,
   EyeOff,
   MousePointerClick,
@@ -33,8 +32,8 @@ import { useSelectionStore } from "@/stores/selection-store";
 import type { BrowserCard, SetInfo, SortKey } from "@/lib/types";
 import { ELEMENTS, RARITY_ORDER, SORT_OPTIONS } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { useWindowVirtualizer } from "@tanstack/react-virtual";
 
-const BATCH_SIZE = 42;
 const SORT_KEYS = SORT_OPTIONS.map((o) => o.value);
 
 export interface CardOverlayEntry {
@@ -72,6 +71,33 @@ function sortCards(cards: BrowserCard[], sort: SortKey): BrowserCard[] {
   });
 }
 
+/** Responsive column count — mirrors the Tailwind grid breakpoints */
+function useColumnCount(hasOverlay: boolean) {
+  const [cols, setCols] = useState(hasOverlay ? 2 : 3);
+  useEffect(() => {
+    function update() {
+      const w = window.innerWidth;
+      if (hasOverlay) {
+        if (w >= 1280) setCols(6);
+        else if (w >= 1024) setCols(5);
+        else if (w >= 768) setCols(4);
+        else if (w >= 640) setCols(3);
+        else setCols(2);
+      } else {
+        if (w >= 1280) setCols(7);
+        else if (w >= 1024) setCols(6);
+        else if (w >= 768) setCols(5);
+        else if (w >= 640) setCols(4);
+        else setCols(3);
+      }
+    }
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, [hasOverlay]);
+  return cols;
+}
+
 export function CardBrowser({
   cards,
   sets,
@@ -95,12 +121,10 @@ export function CardBrowser({
       .withOptions({ shallow: true, clearOnDefault: true })
   );
 
-  const [visibleCount, setVisibleCount] = useState(BATCH_SIZE);
   const [showHelp, setShowHelp] = useState(false);
   const [showOwnedOnly, setShowOwnedOnly] = useState(
     defaultOwnedOnly && !!overlay
   );
-  const sentinelRef = useRef<HTMLDivElement>(null);
 
   // Selection store
   const selectActive = useSelectionStore((s) => s.active);
@@ -113,10 +137,7 @@ export function CardBrowser({
   // Build overlay lookup
   const overlayMap = useMemo(() => {
     if (!overlay) return null;
-    const map = new Map<
-      string,
-      { qty: number; market: number; cost: number }
-    >();
+    const map = new Map<string, { qty: number; market: number; cost: number }>();
     for (const e of overlay) {
       const existing = map.get(e.cardId);
       if (existing) {
@@ -254,29 +275,10 @@ export function CardBrowser({
     ownedCardIds,
   ]);
 
-  const visibleCards = filtered.slice(0, visibleCount);
-  const hasMore = visibleCount < filtered.length;
-
+  // Scroll to top on search/sort change
   useEffect(() => {
-    setVisibleCount(BATCH_SIZE);
     window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
   }, [debouncedQ, sort]);
-
-  useEffect(() => {
-    const el = sentinelRef.current;
-    if (!el || !hasMore) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting)
-          setVisibleCount((prev) =>
-            Math.min(prev + BATCH_SIZE, filtered.length)
-          );
-      },
-      { rootMargin: "400px" }
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [hasMore, filtered.length]);
 
   const updateQuery = useCallback(
     (newQ: string) => {
@@ -303,6 +305,41 @@ export function CardBrowser({
       defence: { min: 0, max: defMax },
     };
   }, [cards]);
+
+  // ── Virtual grid ─────────────────────────────────────────────────────────
+  const colCount = useColumnCount(!!overlay);
+  const rows = useMemo(() => {
+    const result: BrowserCard[][] = [];
+    for (let i = 0; i < filtered.length; i += colCount) {
+      result.push(filtered.slice(i, i + colCount));
+    }
+    return result;
+  }, [filtered, colCount]);
+
+  const listRef = useRef<HTMLDivElement>(null);
+  const [scrollMargin, setScrollMargin] = useState(0);
+
+  // Re-measure listRef.offsetTop after every render so scrollMargin stays accurate
+  useEffect(() => {
+    if (listRef.current) {
+      setScrollMargin(listRef.current.offsetTop);
+    }
+  });
+
+  const virtualizer = useWindowVirtualizer({
+    count: rows.length,
+    estimateSize: () => 220,
+    overscan: 3,
+    scrollMargin,
+  });
+
+  const virtualItems = virtualizer.getVirtualItems();
+  const totalHeight = virtualizer.getTotalSize();
+
+  const gridClass = overlay
+    ? "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3"
+    : "grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-2";
+  // ─────────────────────────────────────────────────────────────────────────
 
   return (
     <div className="flex flex-col gap-3">
@@ -339,7 +376,7 @@ export function CardBrowser({
           </div>
         </div>
 
-        {/* Select mode toggle — always visible */}
+        {/* Select mode toggle */}
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
@@ -428,7 +465,6 @@ export function CardBrowser({
 
       <p className="text-xs text-muted-foreground">
         {filtered.length} card{filtered.length !== 1 ? "s" : ""}
-        {hasMore && <span> · showing {visibleCount}</span>}
         {selectionTotal > 0 && (
           <span className="text-amber-300 ml-2">
             · {selectionSize} cards ({selectionTotal} total) selected
@@ -436,35 +472,49 @@ export function CardBrowser({
         )}
       </p>
 
-      {/* Card grid */}
+      {/* Virtual card grid */}
       {filtered.length === 0 ? (
         <div className="text-center py-16 text-muted-foreground">
           <p className="text-lg">No cards found</p>
           <p className="text-sm mt-1">Try adjusting your search or filters</p>
         </div>
       ) : (
-        <div
-          className={cn(
-            "grid gap-2",
-            overlay
-              ? "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3"
-              : "grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7"
-          )}
-        >
-          {visibleCards.map((card) => (
-            <CardCell
-              key={card.id}
-              card={card}
-              overlayData={overlayMap?.get(card.id) ?? null}
-              hasOverlay={!!overlay}
-            />
-          ))}
-        </div>
-      )}
-
-      {hasMore && (
-        <div ref={sentinelRef} className="flex justify-center py-8">
-          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        <div ref={listRef}>
+          <div style={{ height: totalHeight, position: "relative" }}>
+            {virtualItems.map((virtualRow) => {
+              const rowCards = rows[virtualRow.index];
+              return (
+                <div
+                  key={virtualRow.key}
+                  data-index={virtualRow.index}
+                  ref={virtualizer.measureElement}
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    transform: `translateY(${virtualRow.start - virtualizer.options.scrollMargin}px)`,
+                  }}
+                >
+                  <div className={cn(gridClass, "pb-2")}>
+                    {rowCards.map((card, colIndex) => {
+                      const globalIndex =
+                        virtualRow.index * colCount + colIndex;
+                      return (
+                        <CardCell
+                          key={card.id}
+                          card={card}
+                          index={globalIndex}
+                          overlayData={overlayMap?.get(card.id) ?? null}
+                          hasOverlay={!!overlay}
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>
