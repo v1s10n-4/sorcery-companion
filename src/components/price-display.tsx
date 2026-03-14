@@ -54,15 +54,12 @@ export function PriceDisplay({ prices, className }: PriceDisplayProps) {
             <PricePill label="Median" value={p.medianPrice} />
           </div>
 
-          {/* Chart */}
-          {p.history.length >= 2 && (
-            <PriceChart history={p.history} />
-          )}
-
-          {p.history.length < 2 && p.marketPrice != null && (
-            <p className="text-[10px] text-muted-foreground/50 text-center mt-1">
-              Price history will appear after more data is collected
-            </p>
+          {/* Chart — lazy-loads 90-day history when tcgplayerProductId is provided */}
+          {p.marketPrice != null && (
+            <PriceChart
+              history={p.history}
+              tcgplayerProductId={p.tcgplayerProductId}
+            />
           )}
         </div>
       ))}

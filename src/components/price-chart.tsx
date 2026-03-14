@@ -1,17 +1,48 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useEffect, useState } from "react";
+import { fetchPriceHistory } from "@/lib/actions/price-history";
 
 interface PriceChartProps {
   history: { date: string; price: number }[];
+  tcgplayerProductId?: number;
   className?: string;
 }
 
 /**
  * Minimal SVG sparkline chart for price history.
  * No dependencies — just an SVG path.
+ *
+ * If `history` is empty and `tcgplayerProductId` is provided,
+ * fetches the 90-day history lazily on mount via server action.
  */
-export function PriceChart({ history, className }: PriceChartProps) {
+export function PriceChart({
+  history: initialHistory,
+  tcgplayerProductId,
+  className,
+}: PriceChartProps) {
+  const [history, setHistory] = useState(initialHistory);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (initialHistory.length > 0 || tcgplayerProductId == null) return;
+    let cancelled = false;
+    setLoading(true);
+    fetchPriceHistory(tcgplayerProductId)
+      .then((data) => {
+        if (!cancelled) setHistory(data);
+      })
+      .catch(() => {
+        // silently fail — missing chart is non-critical
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tcgplayerProductId, initialHistory.length]);
+
   const { path, minPrice, maxPrice, change } = useMemo(() => {
     if (history.length < 2)
       return { path: "", minPrice: 0, maxPrice: 0, lastPrice: 0, change: 0 };
@@ -51,6 +82,15 @@ export function PriceChart({ history, className }: PriceChartProps) {
       change: pctChange,
     };
   }, [history]);
+
+  if (loading) {
+    return (
+      <div className={className}>
+        <div className="h-12 w-full rounded bg-muted/30 animate-pulse" />
+        <div className="h-3 w-full rounded bg-muted/20 animate-pulse mt-1" />
+      </div>
+    );
+  }
 
   if (history.length < 2) return null;
 

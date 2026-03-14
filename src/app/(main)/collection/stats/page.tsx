@@ -13,6 +13,8 @@ const CollectionStatsView = dynamic(
   { loading: () => <CollectionStatsSkeleton /> }
 );
 
+export const experimental_ppr = true;
+
 export const metadata: Metadata = {
   title: "Collection Stats — Sorcery Companion",
 };

@@ -4,6 +4,8 @@ import { requireUser } from "@/lib/auth";
 import { SettingsView } from "@/components/settings-view";
 import { SettingsSkeleton } from "@/components/skeletons";
 
+export const experimental_ppr = true;
+
 export const metadata: Metadata = {
   title: "Settings — Sorcery Companion",
 };
