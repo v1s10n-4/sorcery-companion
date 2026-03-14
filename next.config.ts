@@ -2,10 +2,10 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactCompiler: true,
-  // cacheComponents: true,
-  // BLOCKED: dynamicParams=false in cards/[id] and sets/[slug] pages is incompatible
-  // with cacheComponents (Next.js 16 constraint). Need to remove `dynamicParams`
-  // exports from those routes or wait for a Next.js fix before re-enabling PPR.
+  // Partial Prerendering: serve static shell from edge cache instantly,
+  // stream dynamic (auth-gated) content via Suspense boundaries.
+  // Requires all routes to use notFound() instead of dynamicParams=false.
+  cacheComponents: true,
   experimental: {
     useCache: true,
     // Optimise barrel-file imports for heavy icon/component libs.
