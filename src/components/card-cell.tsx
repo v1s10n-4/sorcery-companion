@@ -17,6 +17,8 @@ interface OverlayData {
 }
 
 interface CardCellProps {
+  /** Global index in the grid — used to set image priority for above-fold cards */
+  index?: number;
   card: BrowserCard;
   overlayData?: OverlayData | null;
   hasOverlay: boolean;
@@ -26,6 +28,7 @@ export const CardCell = memo(function CardCell({
   card,
   overlayData,
   hasOverlay,
+  index,
 }: CardCellProps) {
   const active = useSelectionStore((s) => s.active);
   const selectedQty = useSelectionStore((s) => s.items.get(card.id) ?? 0);
@@ -168,6 +171,7 @@ export const CardCell = memo(function CardCell({
               width={260}
               height={364}
               blurDataUrl={card.blurDataUrl}
+              priority={typeof index === "number" && index < 7}
               className={cn(
                 "w-full h-auto",
                 !active &&

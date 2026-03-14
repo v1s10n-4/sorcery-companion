@@ -12,6 +12,7 @@ interface CardImageProps {
   width?: number;
   height?: number;
   blurDataUrl?: string | null;
+  priority?: boolean;
 }
 
 export function CardImage({
@@ -21,6 +22,7 @@ export function CardImage({
   width = 300,
   height = 420,
   blurDataUrl,
+  priority = false,
 }: CardImageProps) {
   const [error, setError] = useState(false);
   const src = `${CARD_IMAGE_BASE}/cards/${slug}.png`;
@@ -43,6 +45,7 @@ export function CardImage({
       width={width}
       height={height}
       className={`rounded-lg shadow-lg ${className}`}
+      priority={priority}
       onError={() => setError(true)}
       {...(blurDataUrl
         ? { placeholder: "blur", blurDataURL: blurDataUrl }
