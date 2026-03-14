@@ -13,6 +13,8 @@ const DeckListView = dynamic(
   { loading: () => <DeckListSkeleton /> }
 );
 
+export const experimental_ppr = true;
+
 export const metadata: Metadata = {
   title: "My Decks — Sorcery Companion",
 };

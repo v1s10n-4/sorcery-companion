@@ -12,6 +12,8 @@ import { CollectionPageSkeleton } from "@/components/skeletons";
 import { Button } from "@/components/ui/button";
 import { Upload, Download, BarChart3 } from "lucide-react";
 
+export const experimental_ppr = true;
+
 export const metadata: Metadata = {
   title: "My Collection — Sorcery Companion",
 };
