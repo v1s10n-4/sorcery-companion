@@ -262,6 +262,19 @@ export async function getDeckWithCards(
   };
 }
 
+// ── Deck metadata (for generateMetadata, lighter query) ──
+
+export async function getDeckMeta(deckId: string) {
+  "use cache";
+  cacheLife("max");
+  cacheTag(`deck:${deckId}`);
+
+  return prisma.deck.findUnique({
+    where: { id: deckId },
+    select: { name: true, userId: true },
+  });
+}
+
 // ── Public collection (/u/[slug]) ──
 
 export interface PublicCollectionCard {

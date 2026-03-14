@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
 import { CardDetailSkeleton } from "@/components/skeletons";
 import { CardDetailView } from "@/components/card-detail-view";
-import { getCard, getAllCardIds } from "@/lib/data";
+import { getCard, getAllCardIds, getCardMeta } from "@/lib/data";
 import type { CardDetail, Printing, VariantPrice } from "@/lib/types";
 
 const CARD_IMAGE_BASE =
@@ -30,7 +30,7 @@ export async function generateStaticParams() {
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { id } = await params;
-  const card = await getCard(id);
+  const card = await getCardMeta(id);
   if (!card) return { title: "Card Not Found" };
   return {
     title: `${card.name} — Sorcery Companion`,

@@ -3,9 +3,8 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import dynamic from "next/dynamic";
 import { requireUser } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
 import { getAllCards, getAllSets, preloadCatalog } from "@/lib/data";
-import { getDeckWithCards } from "@/lib/data-user";
+import { getDeckWithCards, getDeckMeta } from "@/lib/data-user";
 import { CardBrowserSkeleton } from "@/components/skeletons";
 import type { SetInfo } from "@/lib/types";
 import type { DeckDetail } from "@/lib/data-user";
@@ -24,7 +23,7 @@ interface PageProps {
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { id } = await params;
-  const deck = await prisma.deck.findUnique({ where: { id }, select: { name: true } });
+  const deck = await getDeckMeta(id);
   return { title: deck ? `${deck.name} — Sorcery Companion` : "Deck Not Found" };
 }
 
