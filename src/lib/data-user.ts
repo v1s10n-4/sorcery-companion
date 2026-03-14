@@ -7,6 +7,7 @@
  *
  * Tag taxonomy (user scope):
  *   "collection:{userId}"         → user's collection cards + stats
+ *                                   (getCollectionForUser, getCollectionStatsData)
  *   "decks:{userId}"              → user's deck list
  *   "deck:{deckId}"               → single deck with cards
  *   "public-collection:{slug}"    → public collection page (/u/[slug])
@@ -16,6 +17,76 @@
 import { cacheLife, cacheTag } from "next/cache";
 import { prisma } from "./prisma";
 import { getTotalCardCount, getTotalVariantCount, getSetCardCounts } from "./data";
+
+// ── Collection overlay (/collection) ──
+
+export interface CollectionOverlayData {
+  id: string;
+  isPublic: boolean;
+  slug: string | null;
+  description: string | null;
+  cards: {
+    cardId: string;
+    quantity: number;
+    purchasePrice: number | null;
+    marketPrice: number | null;
+  }[];
+}
+
+export async function getCollectionForUser(
+  userId: string
+): Promise<CollectionOverlayData | null> {
+  "use cache";
+  cacheLife("max");
+  cacheTag(`collection:${userId}`);
+
+  const collection = await prisma.collection.findFirst({
+    where: { userId },
+    select: {
+      id: true,
+      isPublic: true,
+      slug: true,
+      description: true,
+      cards: {
+        select: {
+          cardId: true,
+          quantity: true,
+          purchasePrice: true,
+          variant: {
+            select: {
+              tcgplayerProducts: {
+                select: {
+                  priceSnapshots: {
+                    orderBy: { recordedAt: "desc" as const },
+                    take: 1,
+                    select: { marketPrice: true },
+                  },
+                },
+                take: 1,
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!collection) return null;
+
+  return {
+    id: collection.id,
+    isPublic: collection.isPublic,
+    slug: collection.slug,
+    description: collection.description,
+    cards: collection.cards.map((cc) => ({
+      cardId: cc.cardId,
+      quantity: cc.quantity,
+      purchasePrice: cc.purchasePrice,
+      marketPrice:
+        cc.variant.tcgplayerProducts[0]?.priceSnapshots[0]?.marketPrice ?? null,
+    })),
+  };
+}
 
 // ── Collection stats (/collection/stats) ──
 
@@ -42,11 +113,30 @@ export async function getCollectionStatsData(
 
   const collection = await prisma.collection.findFirst({
     where: { userId },
-    include: {
+    select: {
       cards: {
-        include: {
-          card: true,
-          variant: { include: { set: { include: { set: true } } } },
+        select: {
+          cardId: true,
+          variantId: true,
+          quantity: true,
+          card: {
+            select: {
+              type: true,
+              elements: true,
+              rarity: true,
+              cost: true,
+            },
+          },
+          variant: {
+            select: {
+              set: {
+                select: {
+                  setId: true,
+                  set: { select: { name: true } },
+                },
+              },
+            },
+          },
         },
       },
     },
@@ -260,6 +350,19 @@ export async function getDeckWithCards(
       section: dc.section,
     })),
   };
+}
+
+// ── Deck metadata (for generateMetadata, lighter query) ──
+
+export async function getDeckMeta(deckId: string) {
+  "use cache";
+  cacheLife("max");
+  cacheTag(`deck:${deckId}`);
+
+  return prisma.deck.findUnique({
+    where: { id: deckId },
+    select: { name: true, userId: true },
+  });
 }
 
 // ── Public collection (/u/[slug]) ──
