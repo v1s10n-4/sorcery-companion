@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Cinzel, Inter } from "next/font/google";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
 import { Analytics } from "@vercel/analytics/next";
-import { TooltipProvider } from "@/components/ui/tooltip";
+import { Providers } from "@/components/providers";
 import { BottomTabBar } from "@/components/bottom-tab-bar";
 import "./globals.css";
 
@@ -73,10 +73,10 @@ export default function RootLayout({
         className={`${cinzel.variable} ${inter.variable} antialiased min-h-screen bg-background text-foreground font-sans`}
       >
         <NuqsAdapter>
-          <TooltipProvider delayDuration={300}>
+          <Providers>
             {children}
             <BottomTabBar />
-          </TooltipProvider>
+          </Providers>
         </NuqsAdapter>
         <Analytics />
       </body>

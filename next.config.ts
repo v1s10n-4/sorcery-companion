@@ -2,6 +2,10 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactCompiler: true,
+  // cacheComponents: true,
+  // BLOCKED: dynamicParams=false in cards/[id] and sets/[slug] pages is incompatible
+  // with cacheComponents (Next.js 16 constraint). Need to remove `dynamicParams`
+  // exports from those routes or wait for a Next.js fix before re-enabling PPR.
   experimental: {
     useCache: true,
     // Optimise barrel-file imports for heavy icon/component libs.
