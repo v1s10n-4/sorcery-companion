@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
 import { CardDetailSkeleton } from "@/components/skeletons";
 import { CardDetailView } from "@/components/card-detail-view";
-import { getCard, getAllCardIds } from "@/lib/data";
+import { getCard, getAllCardIds, getCardMeta } from "@/lib/data";
 import type { CardDetail, Printing, VariantPrice } from "@/lib/types";
 
 const CARD_IMAGE_BASE =
@@ -14,9 +14,6 @@ const CARD_IMAGE_BASE =
 interface PageProps {
   params: Promise<{ id: string }>;
 }
-
-// Unknown IDs → 404; never fall through to a dynamic render.
-export const dynamicParams = false;
 
 // ── Static params (pre-render every card at build time) ──
 
@@ -30,7 +27,7 @@ export async function generateStaticParams() {
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { id } = await params;
-  const card = await getCard(id);
+  const card = await getCardMeta(id);
   if (!card) return { title: "Card Not Found" };
   return {
     title: `${card.name} — Sorcery Companion`,
@@ -75,8 +72,7 @@ async function CardDetailContent({ id }: { id: string }) {
   const raw = await getCard(id);
   if (!raw) notFound();
 
-  const bgSlug = raw.variants[0]?.slug;
-  const bgImageUrl = bgSlug ? `${CARD_IMAGE_BASE}/${bgSlug}.png` : null;
+  const bgBlurUrl = raw.variants[0]?.blurDataUrl ?? null;
 
   // Serialize into a clean, client-safe shape
   const printings: Printing[] = raw.sets.map((cs) => ({
@@ -155,12 +151,12 @@ async function CardDetailContent({ id }: { id: string }) {
 
   return (
     <>
-      {/* Blurred card art background — rendered after data loads */}
-      {bgImageUrl && (
+      {/* Blurred card art background — uses blurDataUrl (inline base64) to avoid a full PNG download */}
+      {bgBlurUrl && (
         <div
-          className="fixed inset-0 -z-10 opacity-[0.07] blur-3xl scale-125 pointer-events-none"
+          className="fixed inset-0 -z-10 opacity-[0.15] blur-3xl scale-125 pointer-events-none"
           style={{
-            backgroundImage: `url(${bgImageUrl})`,
+            backgroundImage: `url(${bgBlurUrl})`,
             backgroundSize: "cover",
             backgroundPosition: "center",
           }}

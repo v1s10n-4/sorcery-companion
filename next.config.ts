@@ -2,6 +2,10 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactCompiler: true,
+  // Partial Prerendering: serve static shell from edge cache instantly,
+  // stream dynamic (auth-gated) content via Suspense boundaries.
+  // Requires all routes to use notFound() instead of dynamicParams=false.
+  cacheComponents: true,
   experimental: {
     useCache: true,
     // Optimise barrel-file imports for heavy icon/component libs.

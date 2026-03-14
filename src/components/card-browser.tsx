@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import {
   Tooltip,
   TooltipContent,
+  TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useQueryState, parseAsString, parseAsStringLiteral } from "nuqs";
@@ -305,6 +306,7 @@ export function CardBrowser({
   }, [cards]);
 
   return (
+    <TooltipProvider delayDuration={300}>
     <div className="flex flex-col gap-3">
       {header}
 
@@ -451,12 +453,13 @@ export function CardBrowser({
               : "grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7"
           )}
         >
-          {visibleCards.map((card) => (
+          {visibleCards.map((card, index) => (
             <CardCell
               key={card.id}
               card={card}
               overlayData={overlayMap?.get(card.id) ?? null}
               hasOverlay={!!overlay}
+              index={index}
             />
           ))}
         </div>
@@ -468,5 +471,6 @@ export function CardBrowser({
         </div>
       )}
     </div>
+    </TooltipProvider>
   );
 }

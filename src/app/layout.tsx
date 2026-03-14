@@ -1,8 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Cinzel, Inter } from "next/font/google";
-import { NuqsAdapter } from "nuqs/adapters/next/app";
+import { Suspense } from "react";
 import { Analytics } from "@vercel/analytics/next";
-import { TooltipProvider } from "@/components/ui/tooltip";
 import { BottomTabBar } from "@/components/bottom-tab-bar";
 import "./globals.css";
 
@@ -72,12 +71,12 @@ export default function RootLayout({
       <body
         className={`${cinzel.variable} ${inter.variable} antialiased min-h-screen bg-background text-foreground font-sans`}
       >
-        <NuqsAdapter>
-          <TooltipProvider delayDuration={300}>
-            {children}
-            <BottomTabBar />
-          </TooltipProvider>
-        </NuqsAdapter>
+        {children}
+        {/* BottomTabBar uses usePathname() — dynamic hook — must be in Suspense
+            so PPR can prerender the static page shell without it */}
+        <Suspense>
+          <BottomTabBar />
+        </Suspense>
         <Analytics />
       </body>
     </html>

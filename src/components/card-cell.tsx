@@ -20,12 +20,14 @@ interface CardCellProps {
   card: BrowserCard;
   overlayData?: OverlayData | null;
   hasOverlay: boolean;
+  index?: number;
 }
 
 export const CardCell = memo(function CardCell({
   card,
   overlayData,
   hasOverlay,
+  index,
 }: CardCellProps) {
   const active = useSelectionStore((s) => s.active);
   const selectedQty = useSelectionStore((s) => s.items.get(card.id) ?? 0);
@@ -168,6 +170,7 @@ export const CardCell = memo(function CardCell({
               width={260}
               height={364}
               blurDataUrl={card.blurDataUrl}
+              priority={typeof index === "number" && index < 7}
               className={cn(
                 "w-full h-auto",
                 !active &&

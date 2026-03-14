@@ -6,8 +6,8 @@
  *   cacheTag(...)     → on-demand invalidation via revalidateTag()
  *
  * Tag taxonomy:
- *   "catalog:cards"       → all card data (getAllCards, getCard, getAllCardIds, getSetCards, counts)
- *   "card:{id}"           → single card detail (getCard)
+ *   "catalog:cards"       → all card data (getAllCards, getCard, getAllCardIds, getCardMeta, getSetCards, counts)
+ *   "card:{id}"           → single card detail (getCard, getCardMeta)
  *   "catalog:sets"        → all set data (getAllSets, getFullSets, getSetBySlug, getAllSetSlugs)
  *   "set:{slug}"          → single set page (getSetBySlug)
  *   "set-grid:{setId}"    → paginated cards in a set (getSetCards)
@@ -121,6 +121,27 @@ export async function getAllCardIds(): Promise<{ id: string }[]> {
   cacheTag("catalog:cards");
 
   return prisma.card.findMany({ select: { id: true } });
+}
+
+/** Lightweight card fetch for generateMetadata — name, rarity, type, first variant slug only. */
+export async function getCardMeta(id: string) {
+  "use cache";
+  cacheLife("max");
+  cacheTag("catalog:cards", `card:${id}`);
+
+  return prisma.card.findUnique({
+    where: { id },
+    select: {
+      name: true,
+      rarity: true,
+      type: true,
+      variants: {
+        orderBy: { createdAt: "asc" },
+        take: 1,
+        select: { slug: true },
+      },
+    },
+  });
 }
 
 export async function getCard(id: string) {
