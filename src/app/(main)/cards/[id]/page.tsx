@@ -15,9 +15,6 @@ interface PageProps {
   params: Promise<{ id: string }>;
 }
 
-// Unknown IDs → 404; never fall through to a dynamic render.
-export const dynamicParams = false;
-
 // ── Static params (pre-render every card at build time) ──
 
 export async function generateStaticParams() {

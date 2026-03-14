@@ -10,6 +10,7 @@ import { ElementBadges, StatIcon, Thresholds } from "@/components/icons";
 import {
   Tooltip,
   TooltipContent,
+  TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Paintbrush, Check } from "lucide-react";
@@ -85,6 +86,7 @@ export function CardDetailView({ card }: { card: CardDetail }) {
   const thresholdWater = printing.thresholdWater ?? card.thresholdWater;
 
   return (
+    <TooltipProvider delayDuration={300}>
     <div className="grid grid-cols-1 md:grid-cols-[300px_1fr] gap-8">
       {/* ── Left: Image + Actions ── */}
       <div className="space-y-4">
@@ -357,5 +359,6 @@ export function CardDetailView({ card }: { card: CardDetail }) {
         </div>
       </div>
     </div>
+    </TooltipProvider>
   );
 }
