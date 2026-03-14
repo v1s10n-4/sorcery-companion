@@ -125,3 +125,46 @@
     @apply bg-background text-foreground;
   }
 }
+/* ─── View Transitions ─────────────────────────────────────────────────────
+   Requires experimental.viewTransition: true in next.config.ts.
+   CSS view-transition-name on card images enables the morph between
+   the card grid (CardCell) and the detail page (CardDetailView).
+   ──────────────────────────────────────────────────────────────────────── */
+
+/* Page-level crossfade — applied to all navigations */
+::view-transition-old(root) {
+  animation: 160ms ease-out both vt-page-out;
+}
+::view-transition-new(root) {
+  animation: 200ms ease-in both vt-page-in;
+}
+
+@keyframes vt-page-out {
+  to { opacity: 0; transform: translateY(-4px); }
+}
+@keyframes vt-page-in {
+  from { opacity: 0; transform: translateY(6px); }
+}
+
+/* Card morph — let the browser interpolate position/size naturally.
+   Suppress the default cross-fade on the named element so only the
+   geometry interpolation runs (via ::view-transition-group). */
+::view-transition-old(card-*),
+::view-transition-new(card-*) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+::view-transition-group(card-*) {
+  animation-duration: 320ms;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Honour the user's motion preference */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root),
+  ::view-transition-group(card-*) {
+    animation: none;
+  }
+}

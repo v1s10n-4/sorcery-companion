@@ -90,14 +90,18 @@ export function CardDetailView({ card }: { card: CardDetail }) {
     <div className="grid grid-cols-1 md:grid-cols-[300px_1fr] gap-8">
       {/* ── Left: Image + Actions ── */}
       <div className="space-y-4">
-        <CardImage
-          key={selected.slug}
-          slug={selected.slug}
-          name={card.name}
-          width={300}
-          height={420}
-          blurDataUrl={selected.blurDataUrl}
-        />
+        {/* viewTransitionName matches card-{id} in CardCell — browser morphs
+            the image between grid thumbnail and detail view on navigation */}
+        <div style={{ viewTransitionName: `card-${card.id}` }} className="rounded-lg overflow-hidden">
+          <CardImage
+            key={selected.slug}
+            slug={selected.slug}
+            name={card.name}
+            width={300}
+            height={420}
+            blurDataUrl={selected.blurDataUrl}
+          />
+        </div>
 
         {/* Variant info */}
         <div className="text-xs text-muted-foreground space-y-1.5">

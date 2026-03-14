@@ -162,6 +162,7 @@ export const CardCell = memo(function CardCell({
             "relative overflow-hidden rounded-lg bg-muted/30",
             selectedQty > 0 && "ring-2 ring-amber-500"
           )}
+          style={{ viewTransitionName: `card-${card.id}` }}
         >
           {card.variantSlug ? (
             <CardImage
