@@ -6,11 +6,12 @@
  *   cacheTag(...)     → on-demand invalidation via revalidateTag()
  *
  * Tag taxonomy:
- *   "catalog:cards"       → all card data (getAllCards, getCard, getAllCardIds, getSetCards, counts)
- *   "card:{id}"           → single card detail (getCard)
- *   "catalog:sets"        → all set data (getAllSets, getFullSets, getSetBySlug, getAllSetSlugs)
- *   "set:{slug}"          → single set page (getSetBySlug)
- *   "set-grid:{setId}"    → paginated cards in a set (getSetCards)
+ *   "catalog:cards"                  → all card data (getAllCards, getCard, getAllCardIds, getSetCards, counts)
+ *   "card:{id}"                      → single card detail (getCard)
+ *   "catalog:sets"                   → all set data (getAllSets, getFullSets, getSetBySlug, getAllSetSlugs)
+ *   "set:{slug}"                     → single set page (getSetBySlug)
+ *   "set-grid:{setId}"               → paginated cards in a set (getSetCards)
+ *   "price-history:{productId}"      → 90-day price history for one TCGplayer product (getPriceHistory)
  *
  * To invalidate:
  *   import { revalidateTag } from "next/cache";
@@ -140,7 +141,7 @@ export async function getCard(id: string) {
                 include: {
                   priceSnapshots: {
                     orderBy: { recordedAt: "desc" },
-                    take: 90,
+                    take: 1, // only latest price at page load
                   },
                 },
               },
@@ -153,6 +154,20 @@ export async function getCard(id: string) {
         orderBy: { createdAt: "asc" },
       },
     },
+  });
+}
+
+/** Lazy price history — 90 days for a single TCGplayer product. */
+export async function getPriceHistory(tcgplayerProductId: number) {
+  "use cache";
+  cacheLife("max");
+  cacheTag(`price-history:${tcgplayerProductId}`, "catalog:cards");
+
+  return prisma.priceSnapshot.findMany({
+    where: { tcgplayerProductId },
+    orderBy: { recordedAt: "desc" },
+    take: 90,
+    select: { marketPrice: true, recordedAt: true },
   });
 }
 

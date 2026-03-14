@@ -2,6 +2,12 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactCompiler: true,
+  // Partial Prerendering (PPR): serves the static shell from edge cache
+  // instantly while auth-gated content streams in via Suspense boundaries.
+  // NOTE: cacheComponents is global — all routes must be PPR-compatible.
+  // Currently blocked by Radix UI TooltipProvider on /cards/[id] rendering
+  // outside Suspense. Audit that route before re-enabling this flag.
+  // cacheComponents: true,
   experimental: {
     useCache: true,
     // Optimise barrel-file imports for heavy icon/component libs.
