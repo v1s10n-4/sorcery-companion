@@ -451,12 +451,13 @@ export function CardBrowser({
               : "grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7"
           )}
         >
-          {visibleCards.map((card) => (
+          {visibleCards.map((card, index) => (
             <CardCell
               key={card.id}
               card={card}
               overlayData={overlayMap?.get(card.id) ?? null}
               hasOverlay={!!overlay}
+              index={index}
             />
           ))}
         </div>
