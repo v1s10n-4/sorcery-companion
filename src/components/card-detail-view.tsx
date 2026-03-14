@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, ViewTransition } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { CardImage } from "@/components/card-image";
@@ -90,18 +90,20 @@ export function CardDetailView({ card }: { card: CardDetail }) {
     <div className="grid grid-cols-1 md:grid-cols-[300px_1fr] gap-8">
       {/* ── Left: Image + Actions ── */}
       <div className="space-y-4">
-        {/* viewTransitionName matches card-{id} in CardCell — browser morphs
-            the image between grid thumbnail and detail view on navigation */}
-        <div style={{ viewTransitionName: `card-${card.id}` }} className="rounded-lg overflow-hidden">
-          <CardImage
-            key={selected.slug}
-            slug={selected.slug}
-            name={card.name}
-            width={300}
-            height={420}
-            blurDataUrl={selected.blurDataUrl}
-          />
-        </div>
+        {/* ViewTransition name matches CardCell — React morphs the image
+            between grid thumbnail and detail hero on navigation */}
+        <ViewTransition name={`card-${card.id}`}>
+          <div className="rounded-lg overflow-hidden">
+            <CardImage
+              key={selected.slug}
+              slug={selected.slug}
+              name={card.name}
+              width={300}
+              height={420}
+              blurDataUrl={selected.blurDataUrl}
+            />
+          </div>
+        </ViewTransition>
 
         {/* Variant info */}
         <div className="text-xs text-muted-foreground space-y-1.5">

@@ -127,8 +127,9 @@
 }
 /* ─── View Transitions ─────────────────────────────────────────────────────
    Requires experimental.viewTransition: true in next.config.ts.
-   CSS view-transition-name on card images enables the morph between
-   the card grid (CardCell) and the detail page (CardDetailView).
+   React's <ViewTransition name={`card-${id}`}> in CardCell and CardDetailView
+   creates a shared-element morph — React auto-applies view-transition-name
+   to the nearest DOM node and calls startViewTransition internally.
    ──────────────────────────────────────────────────────────────────────── */
 
 /* Page-level crossfade — applied to all navigations */
@@ -146,16 +147,11 @@
   from { opacity: 0; transform: translateY(6px); }
 }
 
-/* Card morph — let the browser interpolate position/size naturally.
-   Suppress the default cross-fade on the named element so only the
-   geometry interpolation runs (via ::view-transition-group). */
-::view-transition-old(card-*),
-::view-transition-new(card-*) {
-  animation: none;
-  mix-blend-mode: normal;
-}
-
-::view-transition-group(card-*) {
+/* Card morph — speed up geometry interpolation for all named transitions.
+   Uses * (all) since card IDs are dynamic and can't be pattern-matched.
+   ::view-transition-old/new(root) above override the crossfade for root,
+   so this timing only meaningfully affects the card morph group animation. */
+::view-transition-group(*) {
   animation-duration: 320ms;
   animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -164,7 +160,7 @@
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-old(root),
   ::view-transition-new(root),
-  ::view-transition-group(card-*) {
+  ::view-transition-group(*) {
     animation: none;
   }
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useCallback, memo } from "react";
+import { useRef, useCallback, memo, ViewTransition } from "react";
 import Link from "next/link";
 import { useSelectionStore } from "@/stores/selection-store";
 import { CardImage } from "@/components/card-image";
@@ -157,12 +157,12 @@ export const CardCell = memo(function CardCell({
         className={cn(active && "cursor-pointer")}
         draggable={false}
       >
+        <ViewTransition name={`card-${card.id}`}>
         <div
           className={cn(
             "relative overflow-hidden rounded-lg bg-muted/30",
             selectedQty > 0 && "ring-2 ring-amber-500"
           )}
-          style={{ viewTransitionName: `card-${card.id}` }}
         >
           {card.variantSlug ? (
             <CardImage
@@ -215,6 +215,7 @@ export const CardCell = memo(function CardCell({
             </>
           )}
         </div>
+        </ViewTransition>
       </Link>
 
       {/* Info below image */}
